@@ -4,8 +4,9 @@ import os
 import resource
 import signal
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Self
+from typing import Final, Self
 
 import anyio
 from anyio.lowlevel import checkpoint as anyio_checkpoint
@@ -349,8 +350,10 @@ def main_inner(args: "Args"):
     if args.offline:
         logger.info("Running in OFFLINE mode — no internet checks, local models only")
 
-    if args.bootstrap_peers:
-        raise ValueError("Bootstrap peers has been temporarily removed")
+    reject_removed_bootstrap_peers(
+        args.bootstrap_peers,
+        os.getenv("EXO_BOOTSTRAP_PEERS"),
+    )
 
     if args.no_batch:
         os.environ["EXO_NO_BATCH"] = "1"
@@ -377,6 +380,29 @@ def main_inner(args: "Args"):
         logger_cleanup()
 
 
+BOOTSTRAP_PEERS_REMOVED_MESSAGE: Final[str] = (
+    "Bootstrap peers has been temporarily removed"
+)
+BOOTSTRAP_PEERS_HELP: Final[str] = (
+    "Temporarily removed; setting this flag or EXO_BOOTSTRAP_PEERS fails startup"
+)
+
+
+def reject_removed_bootstrap_peers(
+    bootstrap_peers: list[str],
+    bootstrap_peers_environment: str | None,
+) -> None:
+    """Fail closed when the temporarily removed bootstrap-peers feature is requested.
+
+    ValueError is intended to terminate process startup from Args.parse (before
+    PID lock and logger setup) or from main_inner if Args was constructed without
+    parse. It is not caught inside this module.
+    """
+
+    if bootstrap_peers or bootstrap_peers_environment:
+        raise ValueError(BOOTSTRAP_PEERS_REMOVED_MESSAGE)
+
+
 class Args(FrozenModel):
     verbosity: int = 0
     force_master: bool = False
@@ -395,7 +421,7 @@ class Args(FrozenModel):
     discovery_port: int
 
     @classmethod
-    def parse(cls) -> Self:
+    def parse(cls, argv: Sequence[str] | None = None) -> Self:
         parser = argparse.ArgumentParser(prog="EXO")
         default_verbosity = 0
         parser.add_argument(
@@ -462,7 +488,7 @@ class Args(FrozenModel):
             if os.getenv("EXO_BOOTSTRAP_PEERS")
             else [],
             dest="bootstrap_peers",
-            help="Comma-separated libp2p multiaddrs to dial on startup (env: EXO_BOOTSTRAP_PEERS)",
+            help=BOOTSTRAP_PEERS_HELP,
         )
         parser.add_argument(
             "--namespace",
@@ -500,5 +526,10 @@ class Args(FrozenModel):
             help="Force MLX FAST_SYNCH off",
         )
 
-        args = parser.parse_args()
-        return cls(**vars(args))  # pyright: ignore[reportAny] - We are intentionally validating here, we can't do it statically
+        args = parser.parse_args(argv)
+        parsed = cls(**vars(args))  # pyright: ignore[reportAny] - We are intentionally validating here, we can't do it statically
+        reject_removed_bootstrap_peers(
+            parsed.bootstrap_peers,
+            os.getenv("EXO_BOOTSTRAP_PEERS"),
+        )
+        return parsed

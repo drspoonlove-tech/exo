@@ -1,4 +1,4 @@
-1. EXO_BOOTSTRAP_PEERS is currently broken
+1. EXO_BOOTSTRAP_PEERS is temporarily removed (CLI/env fail at parse)
 
 4. I'd like to see profiled network latency / bandwidth.
 5. I'd like to see how much bandwidth each link is using.
