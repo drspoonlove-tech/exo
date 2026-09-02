@@ -14,9 +14,7 @@ BOOTSTRAP_PEER_MULTIADDR: str = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample"
 @pytest.fixture
 def without_bootstrap_peers_environment() -> Iterator[None]:
     environment = {
-        key: value
-        for key, value in os.environ.items()
-        if key != "EXO_BOOTSTRAP_PEERS"
+        key: value for key, value in os.environ.items() if key != "EXO_BOOTSTRAP_PEERS"
     }
     with mock.patch.dict(os.environ, environment, clear=True):
         yield
@@ -45,9 +43,7 @@ def test_bootstrap_peers_flag_fails_as_removed(
 
 def test_bootstrap_peers_environment_fails_as_removed() -> None:
     with (
-        mock.patch.dict(
-            os.environ, {"EXO_BOOTSTRAP_PEERS": BOOTSTRAP_PEER_MULTIADDR}
-        ),
+        mock.patch.dict(os.environ, {"EXO_BOOTSTRAP_PEERS": BOOTSTRAP_PEER_MULTIADDR}),
         pytest.raises(ValueError, match="temporarily removed") as error_info,
     ):
         Args.parse([])
