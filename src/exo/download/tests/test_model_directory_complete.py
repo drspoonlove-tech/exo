@@ -78,9 +78,7 @@ class TestIsModelDirectoryComplete:
 
 
 class TestResolveCopiedModelWithoutIndex:
-    def test_finds_copied_model_without_safetensors_index(
-        self, tmp_path: Path
-    ) -> None:
+    def test_finds_copied_model_without_safetensors_index(self, tmp_path: Path) -> None:
         writable = tmp_path / "models"
         model_dir = writable / NORMALIZED
         model_dir.mkdir(parents=True)
