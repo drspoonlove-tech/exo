@@ -397,8 +397,9 @@ class DownloadCoordinator:
                         # jinja) in a new commit, the cached file list has new
                         # sizes while local files still match the old revision.
                         # Fall back to the authoritative completeness check
-                        # (is_model_directory_complete) which validates that all
-                        # safetensors weight files are present.
+                        # (is_model_directory_complete): non-empty, no
+                        # ``.partial`` files, and all index-listed weights
+                        # present when a safetensors index exists locally.
                         found = await to_thread.run_sync(
                             resolve_existing_model,
                             model_id,

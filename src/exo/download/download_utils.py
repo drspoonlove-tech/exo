@@ -156,7 +156,7 @@ def resolve_existing_model(
 
     Checks read-only directories first, then writable directories.
     A candidate is only returned if ``is_model_directory_complete`` confirms
-    all weight files are present.
+    the directory is locally complete (non-empty, no ``.partial`` files).
     """
     normalized = model_id.normalize()
     for search_dir in (*EXO_MODELS_READ_ONLY_DIRS, *EXO_MODELS_DIRS):
@@ -275,17 +275,36 @@ async def seed_models(seed_dir: str | Path):
                     logger.error(traceback.format_exc())
 
 
+def _inspect_local_model_files(model_dir: Path) -> tuple[bool, bool]:
+    """Return ``(has_non_partial_files, has_partial_files)`` for ``model_dir``.
+
+    Walks nested directories. A copied model is locally complete when it has
+    at least one non-``.partial`` file and no ``.partial`` files anywhere.
+    """
+    has_non_partial_files = False
+    has_partial_files = False
+    for _directory_path, _directory_names, filenames in os.walk(model_dir):
+        for filename in filenames:
+            if filename.endswith(".partial"):
+                has_partial_files = True
+            else:
+                has_non_partial_files = True
+        if has_non_partial_files and has_partial_files:
+            break
+    return has_non_partial_files, has_partial_files
+
+
 def _scan_model_directory(
     model_dir: Path, recursive: bool = False
 ) -> list[FileListEntry] | None:
     """Scan a local model directory and build a file list.
 
-    Requires at least one ``*.safetensors.index.json``.  Every weight file
+    When a ``*.safetensors.index.json`` is present, every weight file
     referenced by the index that is missing on disk gets ``size=None``.
+    Without an index, returns the files already on disk so a copied model
+    can be listed offline without a Hugging Face file-list cache.
     """
     index_files = list(model_dir.glob("**/*.safetensors.index.json"))
-    if not index_files:
-        return None
 
     entries_by_path: dict[str, FileListEntry] = {}
 
@@ -332,15 +351,26 @@ def _scan_model_directory(
         except Exception:
             continue
 
+    if not entries_by_path:
+        return None
     return list(entries_by_path.values())
 
 
 def is_model_directory_complete(model_dir: Path, card: ModelCard | None = None) -> bool:
-    """Check if a model directory contains all required weight files.
-    Also checks for sibling weights repo.
+    """Return whether ``model_dir`` can be loaded without contacting Hugging Face.
+
+    Local rule: the directory is complete when it is non-empty and contains
+    no ``.partial`` files (including nested). If a safetensors index is
+    present, every weight file it lists must also exist on disk. A sibling
+    vision-weights repo is required when ``card`` names one.
     """
+    if not model_dir.is_dir():
+        return False
+    has_non_partial_files, has_partial_files = _inspect_local_model_files(model_dir)
+    if has_partial_files or not has_non_partial_files:
+        return False
     file_list = _scan_model_directory(model_dir, recursive=True)
-    if file_list is None or not all(f.size is not None for f in file_list):
+    if file_list is not None and not all(f.size is not None for f in file_list):
         return False
     if (
         card is not None
@@ -363,9 +393,9 @@ async def _build_file_list_from_local_directory(
 ) -> list[FileListEntry] | None:
     """Build a file list from locally existing model files.
 
-    We can only figure out the files we need from safetensors index, so
-    a local directory must contain a *.safetensors.index.json and
-    safetensors listed there.
+    Prefer a ``*.safetensors.index.json`` when present so missing shards
+    are visible. Without an index, fall back to the files already on disk
+    so ``skip_internet`` / ``EXO_OFFLINE`` can use a copied complete model.
     """
     normalized = model_id.normalize()
     for search_dir in (*EXO_MODELS_READ_ONLY_DIRS, *EXO_MODELS_DIRS):
