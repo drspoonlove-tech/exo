@@ -12,7 +12,7 @@ from anyio.lowlevel import checkpoint as anyio_checkpoint
 from daemon import DaemonContext  # pyright: ignore[reportMissingTypeStubs]
 from exo_rs import Pidfile, PidfileError
 from loguru import logger
-from pydantic import PositiveInt
+from pydantic import Field, PositiveInt
 
 import exo.routing.topics as topics
 from exo import __version__
@@ -24,7 +24,12 @@ from exo.routing.event_router import EventRouter
 from exo.routing.router import Router, get_node_zid
 from exo.shared.constants import EXO_DEFAULT_MODELS_DIR, EXO_LOG, EXO_PID_FILE
 from exo.shared.election import Election, ElectionResult
-from exo.shared.logging import logger_cleanup, logger_setup
+from exo.shared.logging import (
+    LogLevelName,
+    logger_cleanup,
+    logger_setup,
+    parse_log_filters,
+)
 from exo.shared.types.common import NodeId, SessionId
 from exo.utils import STDIO_FDS
 from exo.utils.channels import Receiver, channel
@@ -336,8 +341,7 @@ def main_inner(args: "Args"):
 
     mp.set_start_method("spawn", force=True)
 
-    # TODO: Refactor the current verbosity system
-    logger_setup(EXO_LOG, args.verbosity)
+    logger_setup(EXO_LOG, args.verbosity, args.log_filters)
 
     logger.info(f"pid = {os.getpid()}")
     if os.getenv("EXO_LIBP2P_NAMESPACE"):
@@ -379,6 +383,7 @@ def main_inner(args: "Args"):
 
 class Args(FrozenModel):
     verbosity: int = 0
+    log_filters: dict[str, LogLevelName] = Field(default_factory=dict)
     force_master: bool = False
     spawn_api: bool = False
     api_port: PositiveInt = 52415
@@ -412,6 +417,19 @@ class Args(FrozenModel):
             action="count",
             dest="verbosity",
             default=default_verbosity,
+        )
+        parser.add_argument(
+            "--log-filter",
+            type=parse_log_filters,
+            default=parse_log_filters(os.getenv("EXO_LOG_FILTER", "")),
+            dest="log_filters",
+            help=(
+                "Comma-separated LOGGER=LEVEL overrides "
+                "(e.g. exo.download=DEBUG,httpx=WARNING). "
+                "Applied on top of the console default (INFO, DEBUG with -v, "
+                "WARNING with -q) and the file sink (always DEBUG). "
+                "Env: EXO_LOG_FILTER"
+            ),
         )
         parser.add_argument(
             "-m",

@@ -9,5 +9,5 @@
 16. Dynamically switch to higher priority connection when it becomes available. Probably bring back InstanceReplacedAtomically.
 17. Faster model loads by streaming model from other devices in cluster.
 18. Add support for specifying the type of network connection to use in a test. Depends on 15/16.
-27. Log cleanup - per-module log filters and default to DEBUG log levels
+27. [done] Log cleanup: `--log-filter` / `EXO_LOG_FILTER` for per-logger levels; file sink always DEBUG; console stays INFO unless `-v` (DEBUG) or `-q` (WARNING).
 28. Validate RDMA connections with ibv_devinfo in the info gatherer
