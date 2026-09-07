@@ -13,6 +13,7 @@ from exo.shared.types.instance_link import InstanceLink, InstanceLinkId
 from exo.shared.types.profiling import (
     DiskUsage,
     MemoryUsage,
+    NodeIbvDevinfoStatus,
     NodeIdentity,
     NodeNetworkInfo,
     NodeRdmaCtlStatus,
@@ -60,6 +61,7 @@ class State(FrozenModel):
     node_thunderbolt: Mapping[NodeId, NodeThunderboltInfo] = {}
     node_thunderbolt_bridge: Mapping[NodeId, ThunderboltBridgeStatus] = {}
     node_rdma_ctl: Mapping[NodeId, NodeRdmaCtlStatus] = {}
+    node_ibv_devinfo: Mapping[NodeId, NodeIbvDevinfoStatus] = {}
     node_backends: Mapping[NodeId, list[Backend]] = {}
 
     # Detected cycles where all nodes have Thunderbolt bridge enabled (>2 nodes)
