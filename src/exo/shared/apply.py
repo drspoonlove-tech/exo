@@ -52,6 +52,7 @@ from exo.shared.types.worker.runners import (
     RunnerStatus,
 )
 from exo.utils.info_gatherer.info_gatherer import (
+    IbvDevinfoStatus,
     MacmonMetrics,
     MacThunderboltConnections,
     MacThunderboltIdentifiers,
@@ -320,6 +321,11 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
     node_rdma_ctl = {
         key: value for key, value in state.node_rdma_ctl.items() if key != event.node_id
     }
+    node_ibv_devinfo = {
+        key: value
+        for key, value in state.node_ibv_devinfo.items()
+        if key != event.node_id
+    }
     # Only recompute cycles if the leaving node had TB bridge enabled
     leaving_node_status = state.node_thunderbolt_bridge.get(event.node_id)
     leaving_node_had_tb_enabled = (
@@ -342,6 +348,7 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
             "node_thunderbolt": node_thunderbolt,
             "node_thunderbolt_bridge": node_thunderbolt_bridge,
             "node_rdma_ctl": node_rdma_ctl,
+            "node_ibv_devinfo": node_ibv_devinfo,
             "thunderbolt_bridge_cycles": thunderbolt_bridge_cycles,
         }
     )
@@ -450,6 +457,11 @@ def apply_node_gathered_info(event: NodeGatheredInfo, state: State) -> State:
                         new_tb_bridge, state.node_network
                     )
                 )
+        case IbvDevinfoStatus():
+            update["node_ibv_devinfo"] = {
+                **state.node_ibv_devinfo,
+                event.node_id: info.status,
+            }
         case RdmaCtlStatus():
             update["node_rdma_ctl"] = {
                 **state.node_rdma_ctl,

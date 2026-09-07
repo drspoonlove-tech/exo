@@ -31,6 +31,7 @@ from exo.utils.channels import Sender
 from exo.utils.pydantic_ext import TaggedModel
 from exo.utils.task_group import TaskGroup
 
+from .ibv_devinfo import IbvDevinfoStatus, claimed_rdma_device_names_from_sysfs
 from .macmon import MacmonMetrics
 from .system_info import (
     get_friendly_name,
@@ -390,6 +391,7 @@ GatheredInfo = (
     | MacThunderboltIdentifiers
     | MacThunderboltConnections
     | RdmaCtlStatus
+    | IbvDevinfoStatus
     | ThunderboltBridgeInfo
     | NodeConfig
     | MiscData
@@ -404,6 +406,7 @@ class InfoGatherer:
     info_sender: Sender[GatheredInfo]
     _tg: TaskGroup = field(init=False, default_factory=TaskGroup)
     _psutil_enabled: bool = field(init=False, default=False)
+    _claimed_rdma_device_names: list[str] = field(init=False, default_factory=list)
 
     async def _can_read_macmon_metrics(self, macmon_path: str) -> bool:
         try:
@@ -451,6 +454,7 @@ class InfoGatherer:
             if not IS_DARWIN:
                 tg.start_soon(self._monitor_memory_usage, 1)
             tg.start_soon(self._watch_system_info, 10)
+            tg.start_soon(self._monitor_ibv_devinfo, 10)
             tg.start_soon(self._monitor_misc, 60)
             tg.start_soon(self._monitor_static_info, 60)
             tg.start_soon(self._monitor_disk_usage, 30)
@@ -497,6 +501,9 @@ class InfoGatherer:
 
                     idents = [
                         it for i in data if (it := i.ident(iface_map)) is not None
+                    ]
+                    self._claimed_rdma_device_names = [
+                        ident.rdma_interface for ident in idents
                     ]
                     await self.info_sender.send(
                         MacThunderboltIdentifiers(idents=idents)
@@ -561,6 +568,27 @@ class InfoGatherer:
             except Exception as e:
                 logger.opt(exception=e).warning("Error gathering RDMA ctl status")
             await anyio.sleep(rdma_ctl_poll_interval)
+
+    async def _monitor_ibv_devinfo(self, ibv_devinfo_poll_interval: float):
+        while True:
+            try:
+                claimed = tuple(
+                    dict.fromkeys(
+                        [
+                            *self._claimed_rdma_device_names,
+                            *claimed_rdma_device_names_from_sysfs(),
+                        ]
+                    )
+                )
+                curr = await IbvDevinfoStatus.gather(claimed_device_names=claimed)
+                if not curr.status.ok:
+                    logger.warning(
+                        f"RDMA ibv_devinfo validation failed: {curr.status.failure}"
+                    )
+                await self.info_sender.send(curr)
+            except Exception as e:
+                logger.opt(exception=e).warning("Error gathering ibv_devinfo status")
+            await anyio.sleep(ibv_devinfo_poll_interval)
 
     async def _monitor_disk_usage(self, disk_poll_interval: float):
         while True:

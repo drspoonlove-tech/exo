@@ -103,6 +103,31 @@ class NodeRdmaCtlStatus(FrozenModel):
     enabled: bool
 
 
+class IbvDevicePort(FrozenModel):
+    """A single InfiniBand/RDMA port reported by ``ibv_devinfo``."""
+
+    port_number: int
+    state: str
+    link_layer: str = ""
+
+
+class IbvDeviceSummary(FrozenModel):
+    """One HCA reported by ``ibv_devinfo``."""
+
+    name: str
+    transport: str = ""
+    ports: Sequence[IbvDevicePort] = []
+
+
+class NodeIbvDevinfoStatus(FrozenModel):
+    """Pass/fail validation of claimed RDMA devices against ``ibv_devinfo``."""
+
+    ok: bool
+    failure: str | None = None
+    devices: Sequence[IbvDeviceSummary] = []
+    missing_claimed_devices: Sequence[str] = []
+
+
 class ThunderboltBridgeStatus(FrozenModel):
     """Whether the Thunderbolt Bridge network service is enabled on this node."""
 

@@ -11,3 +11,8 @@
 18. Add support for specifying the type of network connection to use in a test. Depends on 15/16.
 27. Log cleanup - per-module log filters and default to DEBUG log levels
 28. Validate RDMA connections with ibv_devinfo in the info gatherer
+    DONE: InfoGatherer runs `ibv_devinfo` and records pass/fail plus a device/port
+    summary in cluster state (`node_ibv_devinfo`). Failures cover missing binary,
+    empty device lists, claimed-but-absent devices, and ports that are not
+    PORT_ACTIVE / PORT_ACTIVE_DEFER. Claimed names come from Thunderbolt
+    `rdma_*` identifiers and, when present, `/sys/class/infiniband`.
