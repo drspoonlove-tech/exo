@@ -14,6 +14,10 @@ from loguru import logger
 from pydantic import ValidationError
 
 from exo.shared.constants import EXO_CONFIG_FILE, EXO_DEFAULT_MODELS_DIR
+from exo.shared.memory_pressure import (
+    read_linux_memory_pressure_stall_average_10,
+    read_macos_memory_pressure_level,
+)
 from exo.shared.types.backends import Backend
 from exo.shared.types.memory import Memory
 from exo.shared.types.profiling import (
@@ -41,6 +45,21 @@ from .system_info import (
 )
 
 IS_DARWIN = sys.platform == "darwin"
+
+
+def _override_memory_bytes() -> int | None:
+    override_memory_env = os.getenv("OVERRIDE_MEMORY_MB")
+    if override_memory_env is None:
+        return None
+    return Memory.from_mb(int(override_memory_env)).in_bytes
+
+
+def _gathered_memory_usage() -> MemoryUsage:
+    return MemoryUsage.from_psutil(
+        override_memory=_override_memory_bytes(),
+        linux_pressure_stall_average_10=read_linux_memory_pressure_stall_average_10(),
+        macos_memory_pressure_level=read_macos_memory_pressure_level(),
+    )
 
 
 async def _get_thunderbolt_devices() -> set[str] | None:
@@ -512,17 +531,9 @@ class InfoGatherer:
         if self._psutil_enabled:
             return
         self._psutil_enabled = True
-        override_memory_env = os.getenv("OVERRIDE_MEMORY_MB")
-        override_memory: int | None = (
-            Memory.from_mb(int(override_memory_env)).in_bytes
-            if override_memory_env
-            else None
-        )
         while True:
             try:
-                await self.info_sender.send(
-                    MemoryUsage.from_psutil(override_memory=override_memory)
-                )
+                await self.info_sender.send(_gathered_memory_usage())
             except Exception as e:
                 logger.opt(exception=e).warning("Error gathering memory usage")
             await anyio.sleep(memory_poll_rate)
@@ -610,7 +621,12 @@ class InfoGatherer:
                                 delimiter=b"\n", max_bytes=8 * 1024
                             )
                             text = data.decode("utf-8", errors="replace").strip()
-                            metrics = MacmonMetrics.from_raw_json(text)
+                            sampled = _gathered_memory_usage()
+                            metrics = MacmonMetrics.from_raw_json(
+                                text,
+                                ram_available=sampled.ram_available.in_bytes,
+                                macos_memory_pressure_level=read_macos_memory_pressure_level(),
+                            )
                         await self.info_sender.send(metrics)
             except TimeoutError:
                 logger.warning(

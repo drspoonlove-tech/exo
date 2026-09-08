@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Literal, Self
 
 import psutil
+from pydantic import Field, model_validator
 
+from exo.shared.memory_pressure import compute_memory_pressure
 from exo.shared.types.memory import Memory
 from exo.shared.types.thunderbolt import ThunderboltIdentifier
 from exo.utils.pydantic_ext import FrozenModel
@@ -15,20 +17,56 @@ class MemoryUsage(FrozenModel):
     ram_available: Memory
     swap_total: Memory
     swap_available: Memory
+    memory_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _ensure_pressure_at_least_scarcity(self) -> Self:
+        # model_validate / JSON only — pydantic ignores a replaced instance from __init__.
+        scarcity = compute_memory_pressure(
+            ram_total_bytes=self.ram_total.in_bytes,
+            ram_available_bytes=self.ram_available.in_bytes,
+        )
+        if self.memory_pressure >= scarcity:
+            return self
+        return self.model_copy(update={"memory_pressure": scarcity})
 
     @classmethod
     def from_bytes(
-        cls, *, ram_total: int, ram_available: int, swap_total: int, swap_available: int
+        cls,
+        *,
+        ram_total: int,
+        ram_available: int,
+        swap_total: int,
+        swap_available: int,
+        linux_pressure_stall_average_10: float | None = None,
+        macos_memory_pressure_level: int | None = None,
+        memory_pressure: float | None = None,
     ) -> Self:
         return cls(
             ram_total=Memory.from_bytes(ram_total),
             ram_available=Memory.from_bytes(ram_available),
             swap_total=Memory.from_bytes(swap_total),
             swap_available=Memory.from_bytes(swap_available),
+            memory_pressure=(
+                memory_pressure
+                if memory_pressure is not None
+                else compute_memory_pressure(
+                    ram_total_bytes=ram_total,
+                    ram_available_bytes=ram_available,
+                    linux_pressure_stall_average_10=linux_pressure_stall_average_10,
+                    macos_memory_pressure_level=macos_memory_pressure_level,
+                )
+            ),
         )
 
     @classmethod
-    def from_psutil(cls, *, override_memory: int | None) -> Self:
+    def from_psutil(
+        cls,
+        *,
+        override_memory: int | None,
+        linux_pressure_stall_average_10: float | None = None,
+        macos_memory_pressure_level: int | None = None,
+    ) -> Self:
         vm = psutil.virtual_memory()
         sm = psutil.swap_memory()
 
@@ -37,6 +75,8 @@ class MemoryUsage(FrozenModel):
             ram_available=vm.available if override_memory is None else override_memory,
             swap_total=sm.total,
             swap_available=sm.free,
+            linux_pressure_stall_average_10=linux_pressure_stall_average_10,
+            macos_memory_pressure_level=macos_memory_pressure_level,
         )
 
 
