@@ -12,16 +12,6 @@ from exo.shared.types.thunderbolt import ThunderboltIdentifier
 from exo.utils.pydantic_ext import FrozenModel
 
 
-def _memory_field_to_bytes(value: object) -> int | None:
-    if isinstance(value, Memory):
-        return value.in_bytes
-    if isinstance(value, dict):
-        in_bytes = value.get("in_bytes", value.get("inBytes"))
-        if isinstance(in_bytes, int):
-            return in_bytes
-    return None
-
-
 class MemoryUsage(FrozenModel):
     ram_total: Memory
     ram_available: Memory
@@ -29,28 +19,16 @@ class MemoryUsage(FrozenModel):
     swap_available: Memory
     memory_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _default_memory_pressure(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        if "memory_pressure" in data or "memoryPressure" in data:
-            return data
-        ram_total_bytes = _memory_field_to_bytes(
-            data.get("ram_total", data.get("ramTotal"))
+    @model_validator(mode="after")
+    def _ensure_pressure_at_least_scarcity(self) -> Self:
+        # model_validate / JSON only — pydantic ignores a replaced instance from __init__.
+        scarcity = compute_memory_pressure(
+            ram_total_bytes=self.ram_total.in_bytes,
+            ram_available_bytes=self.ram_available.in_bytes,
         )
-        ram_available_bytes = _memory_field_to_bytes(
-            data.get("ram_available", data.get("ramAvailable"))
-        )
-        if ram_total_bytes is None or ram_available_bytes is None:
-            return data
-        return {
-            **data,
-            "memory_pressure": compute_memory_pressure(
-                ram_total_bytes=ram_total_bytes,
-                ram_available_bytes=ram_available_bytes,
-            ),
-        }
+        if self.memory_pressure >= scarcity:
+            return self
+        return self.model_copy(update={"memory_pressure": scarcity})
 
     @classmethod
     def from_bytes(

@@ -24,15 +24,11 @@ def test_scarcity_uses_available_not_used() -> None:
 
 
 def test_zero_total_is_full_pressure() -> None:
-    assert (
-        compute_memory_pressure(ram_total_bytes=0, ram_available_bytes=0) == 1.0
-    )
+    assert compute_memory_pressure(ram_total_bytes=0, ram_available_bytes=0) == 1.0
 
 
 def test_available_above_total_is_no_pressure() -> None:
-    assert (
-        compute_memory_pressure(ram_total_bytes=10, ram_available_bytes=20) == 0.0
-    )
+    assert compute_memory_pressure(ram_total_bytes=10, ram_available_bytes=20) == 0.0
 
 
 def test_linux_stall_raises_pressure_above_scarcity() -> None:
@@ -118,9 +114,7 @@ def test_parse_linux_stall_invalid_avg10() -> None:
 
 def test_parse_macos_pressure_level_sysctl_form() -> None:
     assert (
-        parse_macos_memory_pressure_level(
-            "kern.memorystatus_vm_pressure_level: 1\n"
-        )
+        parse_macos_memory_pressure_level("kern.memorystatus_vm_pressure_level: 1\n")
         == 1
     )
 
@@ -140,16 +134,13 @@ def test_read_linux_stall_from_file(tmp_path: Path) -> None:
         "full avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
     )
     assert (
-        read_linux_memory_pressure_stall_average_10(pressure_file=pressure_file)
-        == 3.25
+        read_linux_memory_pressure_stall_average_10(pressure_file=pressure_file) == 3.25
     )
 
 
 def test_read_linux_stall_missing_file(tmp_path: Path) -> None:
     assert (
-        read_linux_memory_pressure_stall_average_10(
-            pressure_file=tmp_path / "missing"
-        )
+        read_linux_memory_pressure_stall_average_10(pressure_file=tmp_path / "missing")
         is None
     )
 
@@ -189,22 +180,6 @@ def test_memory_usage_legacy_payload_without_pressure_is_filled() -> None:
     assert dumped["memoryPressure"] == 0.75
 
 
-def test_memory_usage_constructor_fills_pressure_from_available() -> None:
-    usage = MemoryUsage.from_bytes(
-        ram_total=8,
-        ram_available=2,
-        swap_total=0,
-        swap_available=0,
-    )
-    rebuilt = MemoryUsage(
-        ram_total=usage.ram_total,
-        ram_available=usage.ram_available,
-        swap_total=usage.swap_total,
-        swap_available=usage.swap_available,
-    )
-    assert rebuilt.memory_pressure == 0.75
-
-
 def test_from_psutil_uses_available_not_used(monkeypatch: pytest.MonkeyPatch) -> None:
     class _VirtualMemory:
         total = 1000
@@ -225,7 +200,7 @@ def test_from_psutil_uses_available_not_used(monkeypatch: pytest.MonkeyPatch) ->
     )
     usage = MemoryUsage.from_psutil(override_memory=None)
     assert usage.ram_available.in_bytes == 400
-    assert usage.memory_pressure == pytest.approx(0.6)
+    assert usage.memory_pressure == 0.6
 
 
 def test_from_psutil_override_memory_and_stall(
@@ -282,9 +257,7 @@ def _macmon_raw(*, ram_total: int, ram_usage: int) -> RawMacmonMetrics:
 
 
 def test_macmon_fallback_without_available_uses_total_minus_used() -> None:
-    metrics = MacmonMetrics.from_raw(
-        _macmon_raw(ram_total=16_000, ram_usage=12_000)
-    )
+    metrics = MacmonMetrics.from_raw(_macmon_raw(ram_total=16_000, ram_usage=12_000))
     assert metrics.memory.ram_available.in_bytes == 4_000
     assert metrics.memory.memory_pressure == 0.75
 

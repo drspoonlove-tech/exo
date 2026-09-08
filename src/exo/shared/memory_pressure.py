@@ -37,14 +37,10 @@ def compute_memory_pressure(
     candidates = [scarcity]
 
     if linux_pressure_stall_average_10 is not None:
-        candidates.append(
-            min(max(linux_pressure_stall_average_10 / 100.0, 0.0), 1.0)
-        )
+        candidates.append(min(max(linux_pressure_stall_average_10 / 100.0, 0.0), 1.0))
 
     if macos_memory_pressure_level is not None:
-        mapped = MACOS_MEMORY_PRESSURE_LEVEL_TO_RATIO.get(
-            macos_memory_pressure_level
-        )
+        mapped = MACOS_MEMORY_PRESSURE_LEVEL_TO_RATIO.get(macos_memory_pressure_level)
         if mapped is not None:
             candidates.append(mapped)
 
