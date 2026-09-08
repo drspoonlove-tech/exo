@@ -533,8 +533,11 @@
 
       if (macmon) {
         if (macmon.memory && macmon.memory.ram_total > 0) {
+          const pressure = macmon.memory.memory_pressure;
           ramUsagePercent =
-            (macmon.memory.ram_usage / macmon.memory.ram_total) * 100;
+            typeof pressure === "number"
+              ? Math.min(100, Math.max(0, pressure * 100))
+              : (macmon.memory.ram_usage / macmon.memory.ram_total) * 100;
           ramTotal = macmon.memory.ram_total;
           ramUsed = macmon.memory.ram_usage;
         }
@@ -620,7 +623,7 @@
       nodeG
         .append("title")
         .text(
-          `${friendlyName}\nID: ${nodeInfo.id.slice(-8)}\nMemory: ${formatBytes(ramUsed)}/${formatBytes(ramTotal)}`,
+          `${friendlyName}\nID: ${nodeInfo.id.slice(-8)}\nMemory: ${formatBytes(ramUsed)}/${formatBytes(ramTotal)}\nPressure: ${ramUsagePercent.toFixed(0)}%`,
         );
 
       if (modelLower === "mac studio") {

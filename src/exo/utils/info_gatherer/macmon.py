@@ -48,7 +48,19 @@ class MacmonMetrics(TaggedModel):
     memory: MemoryUsage
 
     @classmethod
-    def from_raw(cls, raw: RawMacmonMetrics) -> Self:
+    def from_raw(
+        cls,
+        raw: RawMacmonMetrics,
+        *,
+        ram_available: int | None = None,
+        linux_pressure_stall_average_10: float | None = None,
+        macos_memory_pressure_level: int | None = None,
+    ) -> Self:
+        available_bytes = (
+            ram_available
+            if ram_available is not None
+            else max(raw.memory.ram_total - raw.memory.ram_usage, 0)
+        )
         return cls(
             system_profile=SystemPerformanceProfile(
                 gpu_usage=raw.gpu_usage[1],
@@ -59,12 +71,26 @@ class MacmonMetrics(TaggedModel):
             ),
             memory=MemoryUsage.from_bytes(
                 ram_total=raw.memory.ram_total,
-                ram_available=(raw.memory.ram_total - raw.memory.ram_usage),
+                ram_available=available_bytes,
                 swap_total=raw.memory.swap_total,
                 swap_available=(raw.memory.swap_total - raw.memory.swap_usage),
+                linux_pressure_stall_average_10=linux_pressure_stall_average_10,
+                macos_memory_pressure_level=macos_memory_pressure_level,
             ),
         )
 
     @classmethod
-    def from_raw_json(cls, json: str) -> Self:
-        return cls.from_raw(RawMacmonMetrics.model_validate_json(json))
+    def from_raw_json(
+        cls,
+        json: str,
+        *,
+        ram_available: int | None = None,
+        linux_pressure_stall_average_10: float | None = None,
+        macos_memory_pressure_level: int | None = None,
+    ) -> Self:
+        return cls.from_raw(
+            RawMacmonMetrics.model_validate_json(json),
+            ram_available=ram_available,
+            linux_pressure_stall_average_10=linux_pressure_stall_average_10,
+            macos_memory_pressure_level=macos_memory_pressure_level,
+        )

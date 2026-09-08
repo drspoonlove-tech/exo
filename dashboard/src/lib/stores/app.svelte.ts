@@ -40,6 +40,7 @@ export interface NodeInfo {
     memory?: {
       ram_usage: number;
       ram_total: number;
+      memory_pressure?: number;
     };
     temp?: {
       gpu_temp_avg: number;
@@ -94,6 +95,7 @@ interface RawMemoryUsage {
   ramAvailable?: { inBytes: number };
   swapTotal?: { inBytes: number };
   swapAvailable?: { inBytes: number };
+  memoryPressure?: number;
 }
 
 interface RawSystemPerformanceProfile {
@@ -430,6 +432,7 @@ function transformTopology(
     const ramTotal = memory?.ramTotal?.inBytes ?? 0;
     const ramAvailable = memory?.ramAvailable?.inBytes ?? 0;
     const ramUsage = Math.max(ramTotal - ramAvailable, 0);
+    const memoryPressure = memory?.memoryPressure;
 
     const rawInterfaces = network?.interfaces || [];
     const networkInterfaces = rawInterfaces.map(transformNetworkInterface);
@@ -453,6 +456,7 @@ function transformTopology(
         memory: {
           ram_usage: ramUsage,
           ram_total: ramTotal,
+          memory_pressure: memoryPressure,
         },
         temp:
           system?.temp !== undefined
