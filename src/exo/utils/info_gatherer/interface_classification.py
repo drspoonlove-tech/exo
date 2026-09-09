@@ -73,7 +73,7 @@ def _interface_name_type(interface_name: str) -> InterfaceType:
         return "thunderbolt"
     if name.startswith(("wlan", "wifi", "wl")):
         return "wifi"
-    if name.startswith("eth") or name.startswith(("enp", "ens", "eno")):
+    if name.startswith(("eth", "enp", "ens", "eno")):
         return "ethernet"
     if name in {"en0", "en1"}:
         return "wifi"
