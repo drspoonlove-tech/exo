@@ -34,6 +34,7 @@ export interface NodeInfo {
   network_interfaces?: Array<{
     name?: string;
     addresses?: string[];
+    interface_type?: string;
   }>;
   ip_to_interface?: Record<string, string>;
   macmon_info?: {
@@ -59,6 +60,7 @@ export interface TopologyEdge {
   sendBackInterface?: string;
   sourceRdmaIface?: string;
   sinkRdmaIface?: string;
+  connectionType?: string;
 }
 
 export interface TopologyData {
@@ -112,6 +114,7 @@ interface RawNetworkInterfaceInfo {
   ipv6?: string;
   ipAddresses?: string[];
   ips?: string[];
+  interfaceType?: string;
 }
 
 interface RawNodeNetworkInfo {
@@ -380,6 +383,7 @@ interface GranularNodeState {
 function transformNetworkInterface(iface: RawNetworkInterfaceInfo): {
   name?: string;
   addresses: string[];
+  interface_type?: string;
 } {
   const addresses: string[] = [];
   if (iface.ipAddress && typeof iface.ipAddress === "string") {
@@ -408,7 +412,49 @@ function transformNetworkInterface(iface: RawNetworkInterfaceInfo): {
   return {
     name: iface.name,
     addresses: Array.from(new Set(addresses)),
+    interface_type: iface.interfaceType,
   };
+}
+
+function interfaceTypeLabel(interfaceType?: string): string {
+  switch (interfaceType) {
+    case "wifi":
+      return "Wi-Fi";
+    case "ethernet":
+    case "maybe_ethernet":
+      return "Ethernet";
+    case "thunderbolt":
+      return "Thunderbolt";
+    default:
+      return "Unknown";
+  }
+}
+
+function findInterfaceTypeForIp(
+  nodes: Record<string, NodeInfo>,
+  preferredNodeId: string | undefined,
+  ip: string | undefined,
+): string | undefined {
+  if (!ip) return undefined;
+  const cleanIp =
+    ip.includes(":") && !ip.includes("[") ? ip.split(":")[0] : ip;
+
+  const lookup = (node: NodeInfo | undefined): string | undefined => {
+    const match = node?.network_interfaces?.find((iface) =>
+      (iface.addresses || []).some((addr) => addr === cleanIp || addr === ip),
+    );
+    return match?.interface_type;
+  };
+
+  const preferred = preferredNodeId
+    ? lookup(nodes[preferredNodeId])
+    : undefined;
+  if (preferred) return preferred;
+  for (const node of Object.values(nodes)) {
+    const found = lookup(node);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function transformTopology(
@@ -496,12 +542,19 @@ function transformTopology(
           }
 
           if (nodes[source] && nodes[sink] && source !== sink) {
+            const connectionType =
+              sourceRdmaIface || sinkRdmaIface
+                ? "RDMA"
+                : interfaceTypeLabel(
+                    findInterfaceTypeForIp(nodes, sink, sendBackIp),
+                  );
             edges.push({
               source,
               target: sink,
               sendBackIp,
               sourceRdmaIface,
               sinkRdmaIface,
+              connectionType,
             });
           }
         }

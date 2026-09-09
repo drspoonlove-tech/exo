@@ -7,6 +7,11 @@ import psutil
 from anyio import run_process
 
 from exo.shared.types.profiling import InterfaceType, NetworkInterfaceInfo
+from exo.utils.info_gatherer.interface_classification import (
+    classify_interface_type,
+    collect_sysfs_classification_hints,
+    parse_networksetup_hardware_ports,
+)
 
 
 def get_os_version() -> str:
@@ -66,41 +71,25 @@ async def _get_interface_types_from_networksetup() -> dict[str, InterfaceType]:
     except CalledProcessError:
         return {}
 
-    types: dict[str, InterfaceType] = {}
-    current_type: InterfaceType = "unknown"
-
-    for line in result.stdout.decode().splitlines():
-        if line.startswith("Hardware Port:"):
-            port_name = line.split(":", 1)[1].strip()
-            if "Wi-Fi" in port_name:
-                current_type = "wifi"
-            elif "Ethernet" in port_name or "LAN" in port_name:
-                current_type = "ethernet"
-            elif port_name.startswith("Thunderbolt"):
-                current_type = "thunderbolt"
-            else:
-                current_type = "unknown"
-        elif line.startswith("Device:"):
-            device = line.split(":", 1)[1].strip()
-            # enX is ethernet adapters or thunderbolt - these must be deprioritised
-            if device.startswith("en") and device not in ["en0", "en1"]:
-                current_type = "maybe_ethernet"
-            types[device] = current_type
-
-    return types
+    return parse_networksetup_hardware_ports(result.stdout.decode())
 
 
 async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
-    """
-    Retrieves detailed network interface information on macOS.
-    Parses output from 'networksetup -listallhardwareports' and 'ifconfig'
-    to determine interface names, IP addresses, and types (ethernet, wifi, vpn, other).
-    Returns a list of NetworkInterfaceInfo objects.
+    """Collect each addressable NIC and its classified connection type.
+
+    macOS uses ``networksetup -listallhardwareports``. Other platforms fall
+    back to iface-name heuristics plus optional sysfs hints (wireless dir,
+    thunderbolt device path).
     """
     interfaces_info: list[NetworkInterfaceInfo] = []
     interface_types = await _get_interface_types_from_networksetup()
 
     for iface, services in psutil.net_if_addrs().items():
+        interface_type = interface_types.get(iface)
+        if interface_type is None:
+            interface_type = classify_interface_type(
+                iface, collect_sysfs_classification_hints(iface)
+            )
         for service in services:
             match service.family:
                 case socket.AF_INET | socket.AF_INET6:
@@ -108,7 +97,7 @@ async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
                         NetworkInterfaceInfo(
                             name=iface,
                             ip_address=service.address,
-                            interface_type=interface_types.get(iface, "unknown"),
+                            interface_type=interface_type,
                         )
                     )
                 case _:

@@ -5,6 +5,7 @@
     topologyData,
     isTopologyMinimized,
     debugMode,
+    nodeThunderbolt,
     nodeThunderboltBridge,
     nodeRdmaCtl,
     nodeIdentities,
@@ -32,9 +33,48 @@
   const isMinimized = $derived(isTopologyMinimized());
   const data = $derived(topologyData());
   const debugEnabled = $derived(debugMode());
+  const tbIdentifiers = $derived(nodeThunderbolt());
   const tbBridgeData = $derived(nodeThunderboltBridge());
   const rdmaCtlData = $derived(nodeRdmaCtl());
   const identitiesData = $derived(nodeIdentities());
+
+  function isThunderbolt5LinkSpeed(linkSpeed?: string): boolean {
+    const normalized = (linkSpeed || "").toLowerCase();
+    return (
+      normalized.includes("80 gb") ||
+      normalized.includes("80gb") ||
+      normalized.includes("120 gb") ||
+      normalized.includes("120gb") ||
+      normalized.includes("tb5") ||
+      normalized.includes("thunderbolt 5")
+    );
+  }
+
+  function nodeHasThunderbolt5(nodeId: string): boolean {
+    return (tbIdentifiers?.[nodeId]?.interfaces || []).some((iface) =>
+      isThunderbolt5LinkSpeed(iface.linkSpeed),
+    );
+  }
+
+  function displayConnectionType(
+    edge: {
+      source: string;
+      target: string;
+      connectionType?: string;
+      sourceRdmaIface?: string;
+      sinkRdmaIface?: string;
+    },
+  ): string {
+    if (edge.sourceRdmaIface || edge.sinkRdmaIface) return "RDMA";
+    const base = edge.connectionType || "Unknown";
+    if (
+      base === "Thunderbolt" &&
+      (nodeHasThunderbolt5(edge.source) || nodeHasThunderbolt5(edge.target))
+    ) {
+      return "TB5";
+    }
+    return base;
+  }
 
   function getNodeLabel(nodeId: string): string {
     const node = data?.nodes?.[nodeId];
@@ -302,6 +342,7 @@
       ip: string;
       ifaceLabel: string;
       missingIface: boolean;
+      connectionType: string;
     };
     type PairEntry = {
       a: string;
@@ -358,6 +399,7 @@
         ip,
         ifaceLabel,
         missingIface,
+        connectionType: displayConnectionType(edge),
       });
       pairMap.set(key, entry);
     });
@@ -367,14 +409,35 @@
       const posB = positionById[entry.b];
       if (!posA || !posB) return;
 
+      const connectionTypes = [
+        ...new Set(entry.connections.map((conn) => conn.connectionType)),
+      ];
+      const connectionTypeLabel = connectionTypes.join(" · ");
+
       // Base dashed line
-      linksGroup
+      const link = linksGroup
         .append("line")
         .attr("x1", posA.x)
         .attr("y1", posA.y)
         .attr("x2", posB.x)
         .attr("y2", posB.y)
         .attr("class", "graph-link");
+      link.append("title").text(connectionTypeLabel);
+
+      if (connectionTypeLabel) {
+        const typeFontSize = isMinimized ? 8 : 10;
+        linksGroup
+          .append("text")
+          .attr("x", (posA.x + posB.x) / 2)
+          .attr("y", (posA.y + posB.y) / 2 - (isMinimized ? 6 : 10))
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "auto")
+          .attr("class", "graph-connection-type")
+          .attr("font-size", typeFontSize)
+          .attr("font-family", "SF Mono, ui-monospace, monospace")
+          .attr("fill", "rgba(255,255,255,0.75)")
+          .text(connectionTypeLabel);
+      }
 
       // Calculate midpoint and direction for arrows
       const dx = posB.x - posA.x;
@@ -493,7 +556,7 @@
         quadrantEdges.forEach((edge) => {
           edge.connections.forEach((conn) => {
             const arrow = getArrow(conn.from, conn.to);
-            const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}`;
+            const label = `${arrow} ${conn.connectionType} ${conn.ip} ${conn.ifaceLabel}`;
             debugLabelsGroup
               .append("text")
               .attr("x", baseX)
@@ -1206,6 +1269,7 @@
     const _hoveredNodeId = hoveredNodeId;
     const _filteredNodes = filteredNodes;
     const _highlightedNodes = highlightedNodes;
+    tbIdentifiers;
     if (_data) {
       renderGraph();
     }
@@ -1238,6 +1302,10 @@
     stroke-dasharray: 4, 4;
     opacity: 0.8;
     animation: flowAnimation 0.75s linear infinite;
+  }
+  :global(.graph-connection-type) {
+    pointer-events: none;
+    letter-spacing: 0.04em;
   }
   @keyframes flowAnimation {
     from {
