@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from exo.shared.apply import apply_node_gathered_info, apply_node_timed_out
 from exo.shared.types.common import NodeId
@@ -9,7 +9,7 @@ from exo.utils.info_gatherer.info_gatherer import NodeLinkProfiles
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def test_apply_node_link_profiles_replaces_per_node() -> None:

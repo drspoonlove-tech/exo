@@ -13,8 +13,8 @@ from exo.routing.event_router import (
     EventRouterClosedResourceError,
 )
 from exo.shared.apply import apply
-from exo.shared.link_profile import build_link_profiles
 from exo.shared.constants import EXO_MAX_INSTANCE_RETRIES
+from exo.shared.link_profile import build_link_profiles
 from exo.shared.models.model_cards import ModelId, card_cache
 from exo.shared.types.chunks import InputImageChunk
 from exo.shared.types.commands import (

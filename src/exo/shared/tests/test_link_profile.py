@@ -26,7 +26,7 @@ def test_nic_speed_mbps_or_none_treats_zero_as_unknown() -> None:
 
 
 def test_elapsed_milliseconds_clamps_negative() -> None:
-    assert elapsed_milliseconds(1.0, 1.0125) == 12.5
+    assert elapsed_milliseconds(1.0, 1.25) == 250.0
     assert elapsed_milliseconds(2.0, 1.0) == 0.0
 
 

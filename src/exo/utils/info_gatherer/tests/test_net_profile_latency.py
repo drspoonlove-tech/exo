@@ -12,9 +12,10 @@ def _clock(values: list[float]) -> Iterator[float]:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_check_reachability_records_successful_round_trip() -> None:
     expected = NodeId("node-b")
-    ticks = _clock([10.0, 10.015])
+    ticks = _clock([10.0, 10.25])
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=str(expected))
@@ -31,10 +32,11 @@ async def test_check_reachability_records_successful_round_trip() -> None:
     assert sample is not None
     assert sample.ip_address == "10.0.0.2"
     assert sample.node_id == expected
-    assert sample.latency_ms == 15.0
+    assert sample.latency_ms == 250.0
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_check_reachability_rejects_unexpected_node() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="someone-else")
