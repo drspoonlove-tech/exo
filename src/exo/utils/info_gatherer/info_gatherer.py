@@ -18,6 +18,7 @@ from exo.shared.types.backends import Backend
 from exo.shared.types.memory import Memory
 from exo.shared.types.profiling import (
     DiskUsage,
+    LinkProfile,
     MemoryUsage,
     NetworkInterfaceInfo,
     ThunderboltBridgeStatus,
@@ -200,6 +201,10 @@ class StaticNodeInformation(TaggedModel):
 
 class NodeNetworkInterfaces(TaggedModel):
     ifaces: Sequence[NetworkInterfaceInfo]
+
+
+class NodeLinkProfiles(TaggedModel):
+    profiles: Sequence[LinkProfile]
 
 
 class MacThunderboltIdentifiers(TaggedModel):
@@ -387,6 +392,7 @@ GatheredInfo = (
     MacmonMetrics
     | MemoryUsage
     | NodeNetworkInterfaces
+    | NodeLinkProfiles
     | MacThunderboltIdentifiers
     | MacThunderboltConnections
     | RdmaCtlStatus

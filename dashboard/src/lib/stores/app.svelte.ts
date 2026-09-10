@@ -59,6 +59,9 @@ export interface TopologyEdge {
   sendBackInterface?: string;
   sourceRdmaIface?: string;
   sinkRdmaIface?: string;
+  latencyMs?: number;
+  bandwidthBps?: number;
+  profileLabel?: string;
 }
 
 export interface TopologyData {
@@ -116,6 +119,14 @@ interface RawNetworkInterfaceInfo {
 
 interface RawNodeNetworkInfo {
   interfaces?: RawNetworkInterfaceInfo[];
+}
+
+interface RawLinkProfile {
+  remoteNodeId?: string;
+  remoteIp?: string;
+  latencyMs?: number | null;
+  bandwidthBps?: number | null;
+  bandwidthSource?: string;
 }
 
 interface RawSocketConnection {
@@ -236,6 +247,7 @@ interface RawStateResponse {
   nodeMemory?: Record<string, RawMemoryUsage>;
   nodeSystem?: Record<string, RawSystemPerformanceProfile>;
   nodeNetwork?: Record<string, RawNodeNetworkInfo>;
+  nodeLinkProfiles?: Record<string, RawLinkProfile[]>;
   // Thunderbolt identifiers per node
   nodeThunderbolt?: Record<
     string,
@@ -375,6 +387,56 @@ interface GranularNodeState {
   nodeMemory?: Record<string, RawMemoryUsage>;
   nodeSystem?: Record<string, RawSystemPerformanceProfile>;
   nodeNetwork?: Record<string, RawNodeNetworkInfo>;
+  nodeLinkProfiles?: Record<string, RawLinkProfile[]>;
+}
+
+function formatLatencyMs(latencyMs?: number | null): string | undefined {
+  if (latencyMs == null || Number.isNaN(latencyMs)) return undefined;
+  if (latencyMs < 1) return `${latencyMs.toFixed(2)}ms`;
+  if (latencyMs < 10) return `${latencyMs.toFixed(1)}ms`;
+  return `${Math.round(latencyMs)}ms`;
+}
+
+function formatBandwidthBps(bandwidthBps?: number | null): string | undefined {
+  if (bandwidthBps == null || bandwidthBps <= 0 || Number.isNaN(bandwidthBps)) {
+    return undefined;
+  }
+  const gigabits = bandwidthBps / 1_000_000_000;
+  if (gigabits >= 1) {
+    return `${Number(gigabits.toFixed(gigabits >= 10 ? 0 : 1))} Gb/s`;
+  }
+  const megabits = bandwidthBps / 1_000_000;
+  if (megabits >= 1) {
+    return `${Number(megabits.toFixed(megabits >= 10 ? 0 : 1))} Mb/s`;
+  }
+  return `${Math.round(bandwidthBps / 1_000)} Kb/s`;
+}
+
+export function formatLinkProfileLabel(
+  latencyMs?: number | null,
+  bandwidthBps?: number | null,
+): string | undefined {
+  const parts = [
+    formatLatencyMs(latencyMs),
+    formatBandwidthBps(bandwidthBps),
+  ].filter((part): part is string => part != null);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function matchLinkProfile(
+  profiles: RawLinkProfile[] | undefined,
+  remoteNodeId: string,
+  remoteIp?: string,
+): RawLinkProfile | undefined {
+  if (!profiles || profiles.length === 0) return undefined;
+  if (remoteIp) {
+    const exact = profiles.find(
+      (profile) =>
+        profile.remoteNodeId === remoteNodeId && profile.remoteIp === remoteIp,
+    );
+    if (exact) return exact;
+  }
+  return profiles.find((profile) => profile.remoteNodeId === remoteNodeId);
 }
 
 function transformNetworkInterface(iface: RawNetworkInterfaceInfo): {
@@ -496,12 +558,22 @@ function transformTopology(
           }
 
           if (nodes[source] && nodes[sink] && source !== sink) {
+            const profile = matchLinkProfile(
+              granularState.nodeLinkProfiles?.[source],
+              sink,
+              sendBackIp,
+            );
+            const latencyMs = profile?.latencyMs ?? undefined;
+            const bandwidthBps = profile?.bandwidthBps ?? undefined;
             edges.push({
               source,
               target: sink,
               sendBackIp,
               sourceRdmaIface,
               sinkRdmaIface,
+              latencyMs: latencyMs ?? undefined,
+              bandwidthBps: bandwidthBps ?? undefined,
+              profileLabel: formatLinkProfileLabel(latencyMs, bandwidthBps),
             });
           }
         }
@@ -1319,6 +1391,7 @@ class AppStore {
           nodeMemory: data.nodeMemory,
           nodeSystem: data.nodeSystem,
           nodeNetwork: data.nodeNetwork,
+          nodeLinkProfiles: data.nodeLinkProfiles,
         });
         // Handle topology changes for preview filter
         this.handleTopologyChange();

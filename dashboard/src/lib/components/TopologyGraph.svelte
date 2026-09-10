@@ -8,6 +8,7 @@
     nodeThunderboltBridge,
     nodeRdmaCtl,
     nodeIdentities,
+    formatLinkProfileLabel,
     type NodeInfo,
   } from "$lib/stores/app.svelte";
 
@@ -294,6 +295,7 @@
     // Draw edges
     const linksGroup = svg.append("g").attr("class", "links-group");
     const arrowsGroup = svg.append("g").attr("class", "arrows-group");
+    const profileLabelsGroup = svg.append("g").attr("class", "profile-edge-labels");
     const debugLabelsGroup = svg.append("g").attr("class", "debug-edge-labels");
 
     type ConnectionInfo = {
@@ -302,6 +304,9 @@
       ip: string;
       ifaceLabel: string;
       missingIface: boolean;
+      latencyMs?: number;
+      bandwidthBps?: number;
+      profileLabel?: string;
     };
     type PairEntry = {
       a: string;
@@ -358,6 +363,9 @@
         ip,
         ifaceLabel,
         missingIface,
+        latencyMs: edge.latencyMs,
+        bandwidthBps: edge.bandwidthBps,
+        profileLabel: edge.profileLabel,
       });
       pairMap.set(key, entry);
     });
@@ -415,6 +423,31 @@
           .attr("stroke", "none")
           .attr("fill", "none")
           .attr("marker-end", "url(#arrowhead)");
+      }
+
+      const pairLatencies = entry.connections
+        .map((connection) => connection.latencyMs)
+        .filter((value): value is number => value != null);
+      const pairBandwidths = entry.connections
+        .map((connection) => connection.bandwidthBps)
+        .filter((value): value is number => value != null);
+      const pairLabel = formatLinkProfileLabel(
+        pairLatencies.length > 0 ? Math.min(...pairLatencies) : undefined,
+        pairBandwidths.length > 0 ? Math.max(...pairBandwidths) : undefined,
+      );
+      if (pairLabel) {
+        const offsetX = -uy * 10;
+        const offsetY = ux * 10;
+        profileLabelsGroup
+          .append("text")
+          .attr("x", mx + offsetX)
+          .attr("y", my + offsetY)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("class", "graph-link-profile")
+          .attr("font-size", isMinimized ? 9 : 11)
+          .attr("font-family", "SF Mono, Monaco, monospace")
+          .text(pairLabel);
       }
 
       // Collect debug labels for later positioning at edges
@@ -493,7 +526,7 @@
         quadrantEdges.forEach((edge) => {
           edge.connections.forEach((conn) => {
             const arrow = getArrow(conn.from, conn.to);
-            const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}`;
+            const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}${conn.profileLabel ? ` ${conn.profileLabel}` : ""}`;
             debugLabelsGroup
               .append("text")
               .attr("x", baseX)
@@ -1238,6 +1271,10 @@
     stroke-dasharray: 4, 4;
     opacity: 0.8;
     animation: flowAnimation 0.75s linear infinite;
+  }
+  :global(.graph-link-profile) {
+    fill: rgba(255, 255, 255, 0.72);
+    pointer-events: none;
   }
   @keyframes flowAnimation {
     from {

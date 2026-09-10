@@ -1,6 +1,6 @@
 1. EXO_BOOTSTRAP_PEERS is currently broken
 
-4. I'd like to see profiled network latency / bandwidth.
+4. Profiled network latency / bandwidth — shipped a first slice: HTTP `/node_id` probes now record per-link RTT; bandwidth is best-effort from NIC speed, Thunderbolt advertised link speed, or interface-type estimates. Stored on `State.node_link_profiles` and shown on topology edges. Not live utilization (that's #5). No real multi-node cluster on the cloud VM, so measurements are exercised in unit tests.
 5. I'd like to see how much bandwidth each link is using.
 7. Solve the problem of in continuous batching when a new prompt comes in, it will block decode of the current batch until the prefill is complete.
 8. We want people to be able to copy models over to a new device without ever connecting EXO to the internet. Right now EXO require internet connection once to cache some files to check if a download is complete. Instead, we should simply check if there is a non-empty model folder locally with no .partial files. This indicates it's a fully downloaded model that can be loaded.
