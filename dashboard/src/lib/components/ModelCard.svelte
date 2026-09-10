@@ -413,12 +413,26 @@
   function getConnectionInfo(
     nodeId1: string,
     nodeId2: string,
-  ): Array<{ ip: string; iface: string | null; from: string; to: string }> {
+  ): Array<{
+    ip: string;
+    iface: string | null;
+    from: string;
+    to: string;
+    profileLabel?: string;
+  }> {
     if (!topology?.edges) return [];
 
     // Collect candidates for each direction
-    const aToBCandidates: Array<{ ip: string; iface: string | null }> = [];
-    const bToACandidates: Array<{ ip: string; iface: string | null }> = [];
+    const aToBCandidates: Array<{
+      ip: string;
+      iface: string | null;
+      profileLabel?: string;
+    }> = [];
+    const bToACandidates: Array<{
+      ip: string;
+      iface: string | null;
+      profileLabel?: string;
+    }> = [];
 
     for (const edge of topology.edges) {
       let ip: string;
@@ -433,15 +447,19 @@
       }
 
       if (edge.source === nodeId1 && edge.target === nodeId2) {
-        aToBCandidates.push({ ip, iface });
+        aToBCandidates.push({ ip, iface, profileLabel: edge.profileLabel });
       } else if (edge.source === nodeId2 && edge.target === nodeId1) {
-        bToACandidates.push({ ip, iface });
+        bToACandidates.push({ ip, iface, profileLabel: edge.profileLabel });
       }
     }
 
     // Pick best (prefer non-loopback)
     const pickBest = (
-      candidates: Array<{ ip: string; iface: string | null }>,
+      candidates: Array<{
+        ip: string;
+        iface: string | null;
+        profileLabel?: string;
+      }>,
     ) => {
       if (candidates.length === 0) return null;
       return candidates.find((c) => !c.ip.startsWith("127.")) || candidates[0];
@@ -452,6 +470,7 @@
       iface: string | null;
       from: string;
       to: string;
+      profileLabel?: string;
     }> = [];
 
     const bestAtoB = pickBest(aToBCandidates);
@@ -761,7 +780,9 @@
                   {conn.arrow}
                   {isRdma
                     ? conn.iface || "?"
-                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}
+                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}${conn.profileLabel
+                    ? ` ${conn.profileLabel}`
+                    : ""}`}
                 </text>
               {/each}
               <!-- Top Right -->
@@ -780,7 +801,9 @@
                   {conn.arrow}
                   {isRdma
                     ? conn.iface || "?"
-                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}
+                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}${conn.profileLabel
+                    ? ` ${conn.profileLabel}`
+                    : ""}`}
                 </text>
               {/each}
               <!-- Bottom Left -->
@@ -801,7 +824,9 @@
                   {conn.arrow}
                   {isRdma
                     ? conn.iface || "?"
-                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}
+                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}${conn.profileLabel
+                    ? ` ${conn.profileLabel}`
+                    : ""}`}
                 </text>
               {/each}
               <!-- Bottom Right -->
@@ -822,7 +847,9 @@
                   {conn.arrow}
                   {isRdma
                     ? conn.iface || "?"
-                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}
+                    : `${conn.ip}${conn.iface ? ` (${conn.iface})` : ""}`}${conn.profileLabel
+                    ? ` ${conn.profileLabel}`
+                    : ""}`}
                 </text>
               {/each}
             {/if}

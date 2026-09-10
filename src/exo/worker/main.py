@@ -14,6 +14,7 @@ from exo.routing.event_router import (
 )
 from exo.shared.apply import apply
 from exo.shared.constants import EXO_MAX_INSTANCE_RETRIES
+from exo.shared.link_profile import build_link_profiles
 from exo.shared.models.model_cards import ModelId, card_cache
 from exo.shared.types.chunks import InputImageChunk
 from exo.shared.types.commands import (
@@ -49,12 +50,16 @@ from exo.shared.types.tasks import (
     TextGeneration,
 )
 from exo.shared.types.text_generation import Base64Image, Base64ImageHash
-from exo.shared.types.topology import Connection, SocketConnection
+from exo.shared.types.topology import Connection, RDMAConnection, SocketConnection
 from exo.shared.types.worker.downloads import DownloadCompleted
 from exo.shared.types.worker.instances import InstanceId
 from exo.shared.types.worker.runners import RunnerId
 from exo.utils.channels import Receiver, Sender, channel
-from exo.utils.info_gatherer.info_gatherer import GatheredInfo, InfoGatherer
+from exo.utils.info_gatherer.info_gatherer import (
+    GatheredInfo,
+    InfoGatherer,
+    NodeLinkProfiles,
+)
 from exo.utils.info_gatherer.net_profile import check_reachable
 from exo.utils.keyed_backoff import KeyedBackoff
 from exo.utils.task_group import TaskGroup
@@ -392,15 +397,18 @@ class Worker:
                 conn.edge for conn in self.state.topology.out_edges(self.node_id)
             )
             conns: defaultdict[NodeId, set[str]] = defaultdict(set)
-            async for ip, nid in check_reachable(
+            samples: list[tuple[NodeId, str, float]] = []
+            async for sample in check_reachable(
                 self.state.topology,
                 self.node_id,
                 self.state.node_network,
                 api_port=self.api_port,
             ):
+                ip, nid = sample.ip_address, sample.node_id
                 if ip in conns[nid]:
                     continue
                 conns[nid].add(ip)
+                samples.append((nid, ip, sample.latency_ms))
                 edge = SocketConnection(
                     # nonsense multiaddr
                     sink_multiaddr=Multiaddr(address=f"/ip4/{ip}/tcp/{self.api_port}")
@@ -428,5 +436,25 @@ class Worker:
                 ):
                     logger.debug(f"ping failed to discover {conn=}")
                     await self.event_sender.send(TopologyEdgeDeleted(conn=conn))
+
+            rdma_sinks = tuple(
+                conn.sink
+                for conn in self.state.topology.out_edges(self.node_id)
+                if isinstance(conn.edge, RDMAConnection)
+            )
+            await self.event_sender.send(
+                NodeGatheredInfo(
+                    node_id=self.node_id,
+                    when=str(datetime.now(tz=timezone.utc)),
+                    info=NodeLinkProfiles(
+                        profiles=build_link_profiles(
+                            samples=samples,
+                            node_network=self.state.node_network,
+                            node_thunderbolt=self.state.node_thunderbolt,
+                            rdma_sinks=rdma_sinks,
+                        )
+                    ),
+                )
+            )
 
             await anyio.sleep(10)

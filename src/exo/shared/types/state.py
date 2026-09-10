@@ -12,6 +12,7 @@ from exo.shared.types.common import ModelId, NodeId
 from exo.shared.types.instance_link import InstanceLink, InstanceLinkId
 from exo.shared.types.profiling import (
     DiskUsage,
+    LinkProfile,
     MemoryUsage,
     NodeIdentity,
     NodeNetworkInfo,
@@ -57,6 +58,7 @@ class State(FrozenModel):
     node_disk: Mapping[NodeId, DiskUsage] = {}
     node_system: Mapping[NodeId, SystemPerformanceProfile] = {}
     node_network: Mapping[NodeId, NodeNetworkInfo] = {}
+    node_link_profiles: Mapping[NodeId, Sequence[LinkProfile]] = {}
     node_thunderbolt: Mapping[NodeId, NodeThunderboltInfo] = {}
     node_thunderbolt_bridge: Mapping[NodeId, ThunderboltBridgeStatus] = {}
     node_rdma_ctl: Mapping[NodeId, NodeRdmaCtlStatus] = {}

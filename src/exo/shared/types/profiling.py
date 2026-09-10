@@ -5,6 +5,7 @@ from typing import Literal, Self
 
 import psutil
 
+from exo.shared.types.common import NodeId
 from exo.shared.types.memory import Memory
 from exo.shared.types.thunderbolt import ThunderboltIdentifier
 from exo.utils.pydantic_ext import FrozenModel
@@ -73,6 +74,20 @@ class NetworkInterfaceInfo(FrozenModel):
     name: str
     ip_address: str
     interface_type: InterfaceType = "unknown"
+    nic_speed_mbps: int | None = None
+
+
+BandwidthSource = Literal["nic_speed", "thunderbolt_link", "interface_type"]
+
+
+class LinkProfile(FrozenModel):
+    """Best-effort latency/bandwidth for one directed cluster link."""
+
+    remote_node_id: NodeId
+    remote_ip: str = ""
+    latency_ms: float | None = None
+    bandwidth_bps: int | None = None
+    bandwidth_source: BandwidthSource = "interface_type"
 
 
 class NodeIdentity(FrozenModel):

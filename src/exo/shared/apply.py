@@ -60,6 +60,7 @@ from exo.utils.info_gatherer.info_gatherer import (
     NodeBackends,
     NodeConfig,
     NodeDiskUsage,
+    NodeLinkProfiles,
     NodeNetworkInterfaces,
     RdmaCtlStatus,
     StaticNodeInformation,
@@ -320,6 +321,11 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
     node_rdma_ctl = {
         key: value for key, value in state.node_rdma_ctl.items() if key != event.node_id
     }
+    node_link_profiles = {
+        key: value
+        for key, value in state.node_link_profiles.items()
+        if key != event.node_id
+    }
     # Only recompute cycles if the leaving node had TB bridge enabled
     leaving_node_status = state.node_thunderbolt_bridge.get(event.node_id)
     leaving_node_had_tb_enabled = (
@@ -342,6 +348,7 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
             "node_thunderbolt": node_thunderbolt,
             "node_thunderbolt_bridge": node_thunderbolt_bridge,
             "node_rdma_ctl": node_rdma_ctl,
+            "node_link_profiles": node_link_profiles,
             "thunderbolt_bridge_cycles": thunderbolt_bridge_cycles,
         }
     )
@@ -401,6 +408,11 @@ def apply_node_gathered_info(event: NodeGatheredInfo, state: State) -> State:
             update["node_network"] = {
                 **state.node_network,
                 event.node_id: NodeNetworkInfo(interfaces=info.ifaces),
+            }
+        case NodeLinkProfiles():
+            update["node_link_profiles"] = {
+                **state.node_link_profiles,
+                event.node_id: tuple(info.profiles),
             }
         case MacThunderboltIdentifiers():
             update["node_thunderbolt"] = {

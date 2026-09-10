@@ -6,6 +6,7 @@ from subprocess import CalledProcessError
 import psutil
 from anyio import run_process
 
+from exo.shared.link_profile import nic_speed_mbps_or_none
 from exo.shared.types.profiling import InterfaceType, NetworkInterfaceInfo
 
 
@@ -99,8 +100,13 @@ async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
     """
     interfaces_info: list[NetworkInterfaceInfo] = []
     interface_types = await _get_interface_types_from_networksetup()
+    interface_stats = psutil.net_if_stats()
 
     for iface, services in psutil.net_if_addrs().items():
+        stats = interface_stats.get(iface)
+        nic_speed_mbps = (
+            nic_speed_mbps_or_none(stats.speed) if stats is not None else None
+        )
         for service in services:
             match service.family:
                 case socket.AF_INET | socket.AF_INET6:
@@ -109,6 +115,7 @@ async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
                             name=iface,
                             ip_address=service.address,
                             interface_type=interface_types.get(iface, "unknown"),
+                            nic_speed_mbps=nic_speed_mbps,
                         )
                     )
                 case _:
