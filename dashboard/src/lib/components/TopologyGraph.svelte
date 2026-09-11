@@ -8,6 +8,7 @@
     nodeThunderboltBridge,
     nodeRdmaCtl,
     nodeIdentities,
+    formatUtilizationLabel,
     type NodeInfo,
   } from "$lib/stores/app.svelte";
 
@@ -294,6 +295,9 @@
     // Draw edges
     const linksGroup = svg.append("g").attr("class", "links-group");
     const arrowsGroup = svg.append("g").attr("class", "arrows-group");
+    const utilizationLabelsGroup = svg
+      .append("g")
+      .attr("class", "utilization-edge-labels");
     const debugLabelsGroup = svg.append("g").attr("class", "debug-edge-labels");
 
     type ConnectionInfo = {
@@ -302,6 +306,7 @@
       ip: string;
       ifaceLabel: string;
       missingIface: boolean;
+      utilizationLabel?: string;
     };
     type PairEntry = {
       a: string;
@@ -358,6 +363,7 @@
         ip,
         ifaceLabel,
         missingIface,
+        utilizationLabel: edge.utilizationLabel,
       });
       pairMap.set(key, entry);
     });
@@ -415,6 +421,25 @@
           .attr("stroke", "none")
           .attr("fill", "none")
           .attr("marker-end", "url(#arrowhead)");
+      }
+
+      const pairUtilization = entry.connections
+        .map((connection) => connection.utilizationLabel)
+        .find((label): label is string => Boolean(label));
+      if (pairUtilization) {
+        const offsetX = uy * 10;
+        const offsetY = -ux * 10;
+        utilizationLabelsGroup
+          .append("text")
+          .attr("x", mx + offsetX)
+          .attr("y", my + offsetY)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("class", "graph-link-utilization")
+          .attr("font-size", isMinimized ? 9 : 11)
+          .attr("font-family", "SF Mono, Monaco, monospace")
+          .attr("fill", "rgba(125, 211, 252, 0.9)")
+          .text(pairUtilization);
       }
 
       // Collect debug labels for later positioning at edges
@@ -493,7 +518,10 @@
         quadrantEdges.forEach((edge) => {
           edge.connections.forEach((conn) => {
             const arrow = getArrow(conn.from, conn.to);
-            const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}`;
+            const utilization = conn.utilizationLabel
+              ? ` ${conn.utilizationLabel}`
+              : "";
+            const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}${utilization}`;
             debugLabelsGroup
               .append("text")
               .attr("x", baseX)
@@ -1179,6 +1207,32 @@
             .attr("font-size", debugFontSize)
             .attr("font-family", "SF Mono, Monaco, monospace")
             .text(rdmaText);
+          debugLabelY += debugLineHeight;
+        }
+
+        const busiest = (node.network_interfaces || [])
+          .filter(
+            (iface) =>
+              iface.bytesSentPerSec != null && iface.bytesRecvPerSec != null,
+          )
+          .sort(
+            (left, right) =>
+              (right.bytesSentPerSec ?? 0) +
+              (right.bytesRecvPerSec ?? 0) -
+              ((left.bytesSentPerSec ?? 0) + (left.bytesRecvPerSec ?? 0)),
+          )[0];
+        if (busiest?.name) {
+          nodeG
+            .append("text")
+            .attr("x", nodeInfo.x)
+            .attr("y", debugLabelY)
+            .attr("text-anchor", "middle")
+            .attr("fill", "rgba(125,211,252,0.9)")
+            .attr("font-size", debugFontSize)
+            .attr("font-family", "SF Mono, Monaco, monospace")
+            .text(
+              `${busiest.name} ${formatUtilizationLabel(busiest.bytesSentPerSec ?? 0, busiest.bytesRecvPerSec ?? 0)}`,
+            );
           debugLabelY += debugLineHeight;
         }
 

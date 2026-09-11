@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -14,12 +15,18 @@ from loguru import logger
 from pydantic import ValidationError
 
 from exo.shared.constants import EXO_CONFIG_FILE, EXO_DEFAULT_MODELS_DIR
+from exo.shared.network_utilization import (
+    NetworkUtilizationSampler,
+    read_per_interface_byte_counters,
+    utilization_sample_from_observation,
+)
 from exo.shared.types.backends import Backend
 from exo.shared.types.memory import Memory
 from exo.shared.types.profiling import (
     DiskUsage,
     MemoryUsage,
     NetworkInterfaceInfo,
+    NetworkInterfaceUtilization,
     ThunderboltBridgeStatus,
 )
 from exo.shared.types.thunderbolt import (
@@ -200,6 +207,10 @@ class StaticNodeInformation(TaggedModel):
 
 class NodeNetworkInterfaces(TaggedModel):
     ifaces: Sequence[NetworkInterfaceInfo]
+
+
+class NodeNetworkUtilizationSample(TaggedModel):
+    interfaces: Sequence[NetworkInterfaceUtilization]
 
 
 class MacThunderboltIdentifiers(TaggedModel):
@@ -387,6 +398,7 @@ GatheredInfo = (
     MacmonMetrics
     | MemoryUsage
     | NodeNetworkInterfaces
+    | NodeNetworkUtilizationSample
     | MacThunderboltIdentifiers
     | MacThunderboltConnections
     | RdmaCtlStatus
@@ -451,6 +463,7 @@ class InfoGatherer:
             if not IS_DARWIN:
                 tg.start_soon(self._monitor_memory_usage, 1)
             tg.start_soon(self._watch_system_info, 10)
+            tg.start_soon(self._monitor_network_utilization, 1)
             tg.start_soon(self._monitor_misc, 60)
             tg.start_soon(self._monitor_static_info, 60)
             tg.start_soon(self._monitor_disk_usage, 30)
@@ -536,6 +549,26 @@ class InfoGatherer:
             except Exception as e:
                 logger.opt(exception=e).warning("Error gathering network interfaces")
             await anyio.sleep(interface_watcher_interval)
+
+    async def _monitor_network_utilization(
+        self, network_utilization_poll_interval: float
+    ):
+        sampler = NetworkUtilizationSampler()
+        while True:
+            try:
+                counters = await to_thread.run_sync(read_per_interface_byte_counters)
+                sample = utilization_sample_from_observation(
+                    sampler, counters, monotonic_seconds=time.monotonic()
+                )
+                if sample is not None:
+                    await self.info_sender.send(
+                        NodeNetworkUtilizationSample(interfaces=sample.interfaces)
+                    )
+            except Exception as e:
+                logger.opt(exception=e).warning(
+                    "Error gathering network utilization"
+                )
+            await anyio.sleep(network_utilization_poll_interval)
 
     async def _monitor_thunderbolt_bridge_status(
         self, thunderbolt_bridge_poll_interval: float

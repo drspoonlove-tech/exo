@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import psutil
+from pydantic import Field
 
 from exo.shared.types.memory import Memory
 from exo.shared.types.thunderbolt import ThunderboltIdentifier
@@ -89,6 +90,24 @@ class NodeNetworkInfo(FrozenModel):
     """Network interface information for a node."""
 
     interfaces: Sequence[NetworkInterfaceInfo] = []
+
+
+class NetworkInterfaceUtilization(FrozenModel):
+    """Live byte rate for one NIC, measured across gatherer samples."""
+
+    name: str
+    bytes_sent_per_sec: float = Field(ge=0)
+    bytes_recv_per_sec: float = Field(ge=0)
+
+
+class NodeNetworkUtilization(FrozenModel):
+    """Per-NIC live utilization for a node.
+
+    Overlay data: independent of ``NodeNetworkInfo`` (identity/addressing) and
+    of any later link-capacity / RTT profile map.
+    """
+
+    interfaces: Sequence[NetworkInterfaceUtilization] = []
 
 
 class NodeThunderboltInfo(FrozenModel):

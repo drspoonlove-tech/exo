@@ -15,6 +15,7 @@ from exo.shared.types.profiling import (
     MemoryUsage,
     NodeIdentity,
     NodeNetworkInfo,
+    NodeNetworkUtilization,
     NodeRdmaCtlStatus,
     NodeThunderboltInfo,
     SystemPerformanceProfile,
@@ -57,6 +58,7 @@ class State(FrozenModel):
     node_disk: Mapping[NodeId, DiskUsage] = {}
     node_system: Mapping[NodeId, SystemPerformanceProfile] = {}
     node_network: Mapping[NodeId, NodeNetworkInfo] = {}
+    node_network_utilization: Mapping[NodeId, NodeNetworkUtilization] = {}
     node_thunderbolt: Mapping[NodeId, NodeThunderboltInfo] = {}
     node_thunderbolt_bridge: Mapping[NodeId, ThunderboltBridgeStatus] = {}
     node_rdma_ctl: Mapping[NodeId, NodeRdmaCtlStatus] = {}

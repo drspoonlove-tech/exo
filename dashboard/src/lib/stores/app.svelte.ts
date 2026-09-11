@@ -34,6 +34,8 @@ export interface NodeInfo {
   network_interfaces?: Array<{
     name?: string;
     addresses?: string[];
+    bytesSentPerSec?: number;
+    bytesRecvPerSec?: number;
   }>;
   ip_to_interface?: Record<string, string>;
   macmon_info?: {
@@ -59,6 +61,9 @@ export interface TopologyEdge {
   sendBackInterface?: string;
   sourceRdmaIface?: string;
   sinkRdmaIface?: string;
+  bytesSentPerSec?: number;
+  bytesRecvPerSec?: number;
+  utilizationLabel?: string;
 }
 
 export interface TopologyData {
@@ -116,6 +121,16 @@ interface RawNetworkInterfaceInfo {
 
 interface RawNodeNetworkInfo {
   interfaces?: RawNetworkInterfaceInfo[];
+}
+
+interface RawNetworkInterfaceUtilization {
+  name?: string;
+  bytesSentPerSec?: number;
+  bytesRecvPerSec?: number;
+}
+
+interface RawNodeNetworkUtilization {
+  interfaces?: RawNetworkInterfaceUtilization[];
 }
 
 interface RawSocketConnection {
@@ -236,6 +251,7 @@ interface RawStateResponse {
   nodeMemory?: Record<string, RawMemoryUsage>;
   nodeSystem?: Record<string, RawSystemPerformanceProfile>;
   nodeNetwork?: Record<string, RawNodeNetworkInfo>;
+  nodeNetworkUtilization?: Record<string, RawNodeNetworkUtilization>;
   // Thunderbolt identifiers per node
   nodeThunderbolt?: Record<
     string,
@@ -375,6 +391,48 @@ interface GranularNodeState {
   nodeMemory?: Record<string, RawMemoryUsage>;
   nodeSystem?: Record<string, RawSystemPerformanceProfile>;
   nodeNetwork?: Record<string, RawNodeNetworkInfo>;
+  nodeNetworkUtilization?: Record<string, RawNodeNetworkUtilization>;
+}
+
+function formatBytesPerSecond(bytesPerSec: number): string {
+  const absolute = Math.abs(bytesPerSec);
+  if (absolute < 1000) return `${bytesPerSec.toFixed(0)} B/s`;
+  if (absolute < 1_000_000) return `${(bytesPerSec / 1000).toFixed(1)} KB/s`;
+  if (absolute < 1_000_000_000)
+    return `${(bytesPerSec / 1_000_000).toFixed(1)} MB/s`;
+  return `${(bytesPerSec / 1_000_000_000).toFixed(2)} GB/s`;
+}
+
+export function formatUtilizationLabel(
+  bytesSentPerSec: number,
+  bytesRecvPerSec: number,
+): string {
+  return `↑${formatBytesPerSecond(bytesSentPerSec)} ↓${formatBytesPerSecond(bytesRecvPerSec)}`;
+}
+
+function utilizationForInterface(
+  utilization: RawNodeNetworkUtilization | undefined,
+  interfaceName: string | undefined,
+): RawNetworkInterfaceUtilization | undefined {
+  if (!utilization || !interfaceName) return undefined;
+  return utilization.interfaces?.find((iface) => iface.name === interfaceName);
+}
+
+function interfaceNameOwningAddress(
+  network: RawNodeNetworkInfo | undefined,
+  ip: string | undefined,
+): string | undefined {
+  if (!network || !ip) return undefined;
+  const match = network.interfaces?.find((iface) => {
+    if (iface.ipAddress === ip) return true;
+    if (Array.isArray(iface.ipAddresses) && iface.ipAddresses.includes(ip)) {
+      return true;
+    }
+    if (Array.isArray(iface.ips) && iface.ips.includes(ip)) return true;
+    if (iface.ipv4 === ip || iface.ipv6 === ip) return true;
+    return false;
+  });
+  return match?.name;
 }
 
 function transformNetworkInterface(iface: RawNetworkInterfaceInfo): {
@@ -432,7 +490,16 @@ function transformTopology(
     const ramUsage = Math.max(ramTotal - ramAvailable, 0);
 
     const rawInterfaces = network?.interfaces || [];
-    const networkInterfaces = rawInterfaces.map(transformNetworkInterface);
+    const nodeUtilization = granularState.nodeNetworkUtilization?.[nodeId];
+    const networkInterfaces = rawInterfaces.map((iface) => {
+      const transformed = transformNetworkInterface(iface);
+      const rate = utilizationForInterface(nodeUtilization, transformed.name);
+      return {
+        ...transformed,
+        bytesSentPerSec: rate?.bytesSentPerSec,
+        bytesRecvPerSec: rate?.bytesRecvPerSec,
+      };
+    });
 
     const ipToInterface: Record<string, string> = {};
     for (const iface of networkInterfaces) {
@@ -496,12 +563,32 @@ function transformTopology(
           }
 
           if (nodes[source] && nodes[sink] && source !== sink) {
+            const sourceUtilization =
+              granularState.nodeNetworkUtilization?.[source];
+            const sinkUtilization =
+              granularState.nodeNetworkUtilization?.[sink];
+            const sinkNetwork = granularState.nodeNetwork?.[sink];
+            const matched = sourceRdmaIface
+              ? utilizationForInterface(sourceUtilization, sourceRdmaIface)
+              : utilizationForInterface(
+                  sinkUtilization,
+                  interfaceNameOwningAddress(sinkNetwork, sendBackIp),
+                );
+            const bytesSentPerSec = matched?.bytesSentPerSec;
+            const bytesRecvPerSec = matched?.bytesRecvPerSec;
+            const utilizationLabel =
+              bytesSentPerSec != null && bytesRecvPerSec != null
+                ? formatUtilizationLabel(bytesSentPerSec, bytesRecvPerSec)
+                : undefined;
             edges.push({
               source,
               target: sink,
               sendBackIp,
               sourceRdmaIface,
               sinkRdmaIface,
+              bytesSentPerSec,
+              bytesRecvPerSec,
+              utilizationLabel,
             });
           }
         }
@@ -1319,6 +1406,7 @@ class AppStore {
           nodeMemory: data.nodeMemory,
           nodeSystem: data.nodeSystem,
           nodeNetwork: data.nodeNetwork,
+          nodeNetworkUtilization: data.nodeNetworkUtilization,
         });
         // Handle topology changes for preview filter
         this.handleTopologyChange();
