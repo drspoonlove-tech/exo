@@ -36,6 +36,7 @@ from exo.shared.types.instance_link import InstanceLink, InstanceLinkId
 from exo.shared.types.profiling import (
     NodeIdentity,
     NodeNetworkInfo,
+    NodeNetworkUtilization,
     NodeRdmaCtlStatus,
     NodeThunderboltInfo,
     ThunderboltBridgeStatus,
@@ -61,6 +62,7 @@ from exo.utils.info_gatherer.info_gatherer import (
     NodeConfig,
     NodeDiskUsage,
     NodeNetworkInterfaces,
+    NodeNetworkUtilizationSample,
     RdmaCtlStatus,
     StaticNodeInformation,
     ThunderboltBridgeInfo,
@@ -307,6 +309,11 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
     node_network = {
         key: value for key, value in state.node_network.items() if key != event.node_id
     }
+    node_network_utilization = {
+        key: value
+        for key, value in state.node_network_utilization.items()
+        if key != event.node_id
+    }
     node_thunderbolt = {
         key: value
         for key, value in state.node_thunderbolt.items()
@@ -339,6 +346,7 @@ def apply_node_timed_out(event: NodeTimedOut, state: State) -> State:
             "node_disk": node_disk,
             "node_system": node_system,
             "node_network": node_network,
+            "node_network_utilization": node_network_utilization,
             "node_thunderbolt": node_thunderbolt,
             "node_thunderbolt_bridge": node_thunderbolt_bridge,
             "node_rdma_ctl": node_rdma_ctl,
@@ -401,6 +409,11 @@ def apply_node_gathered_info(event: NodeGatheredInfo, state: State) -> State:
             update["node_network"] = {
                 **state.node_network,
                 event.node_id: NodeNetworkInfo(interfaces=info.ifaces),
+            }
+        case NodeNetworkUtilizationSample():
+            update["node_network_utilization"] = {
+                **state.node_network_utilization,
+                event.node_id: NodeNetworkUtilization(interfaces=info.interfaces),
             }
         case MacThunderboltIdentifiers():
             update["node_thunderbolt"] = {
