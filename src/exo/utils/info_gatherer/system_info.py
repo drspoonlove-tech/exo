@@ -6,6 +6,10 @@ from subprocess import CalledProcessError
 import psutil
 from anyio import run_process
 
+from exo.shared.network_utilization import (
+    InterfaceByteCounters,
+    interface_byte_counters_from_per_nic,
+)
 from exo.shared.types.profiling import InterfaceType, NetworkInterfaceInfo
 
 
@@ -115,6 +119,10 @@ async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
                     pass
 
     return interfaces_info
+
+
+def read_per_interface_byte_counters() -> dict[str, InterfaceByteCounters]:
+    return interface_byte_counters_from_per_nic(psutil.net_io_counters(pernic=True))
 
 
 async def get_model_and_chip() -> tuple[str, str]:

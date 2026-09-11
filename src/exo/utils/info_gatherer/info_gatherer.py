@@ -17,7 +17,6 @@ from pydantic import ValidationError
 from exo.shared.constants import EXO_CONFIG_FILE, EXO_DEFAULT_MODELS_DIR
 from exo.shared.network_utilization import (
     NetworkUtilizationSampler,
-    read_per_interface_byte_counters,
     utilization_sample_from_observation,
 )
 from exo.shared.types.backends import Backend
@@ -45,6 +44,7 @@ from .system_info import (
     get_network_interfaces,
     get_os_build_version,
     get_os_version,
+    read_per_interface_byte_counters,
 )
 
 IS_DARWIN = sys.platform == "darwin"

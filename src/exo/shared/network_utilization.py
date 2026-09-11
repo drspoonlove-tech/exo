@@ -1,8 +1,6 @@
 from collections.abc import Mapping
 from typing import Protocol, final
 
-import psutil
-
 from exo.shared.types.profiling import (
     NetworkInterfaceUtilization,
     NodeNetworkInfo,
@@ -15,8 +13,11 @@ MINIMUM_ELAPSED_SECONDS = 1e-3
 
 
 class ByteCounterSnapshot(Protocol):
-    bytes_sent: int
-    bytes_recv: int
+    @property
+    def bytes_sent(self) -> int: ...
+
+    @property
+    def bytes_recv(self) -> int: ...
 
 
 @final
@@ -39,16 +40,12 @@ def interface_byte_counters_from_per_nic(
     return {
         name: InterfaceByteCounters(
             name=name,
-            bytes_sent=int(snapshot.bytes_sent),
-            bytes_recv=int(snapshot.bytes_recv),
+            bytes_sent=snapshot.bytes_sent,
+            bytes_recv=snapshot.bytes_recv,
         )
         for name, snapshot in per_nic.items()
         if not is_loopback_interface_name(name)
     }
-
-
-def read_per_interface_byte_counters() -> dict[str, InterfaceByteCounters]:
-    return interface_byte_counters_from_per_nic(psutil.net_io_counters(pernic=True))
 
 
 def utilization_from_counter_delta(

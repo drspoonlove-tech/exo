@@ -1,11 +1,10 @@
-from types import SimpleNamespace
+from typing import NamedTuple
 
 from exo.shared.network_utilization import (
     InterfaceByteCounters,
     NetworkUtilizationSampler,
     interface_byte_counters_from_per_nic,
     is_loopback_interface_name,
-    read_per_interface_byte_counters,
     sink_interface_name_for_connection,
     source_interface_name_for_connection,
     utilization_for_connection,
@@ -24,6 +23,11 @@ from exo.shared.types.state import State
 from exo.shared.types.topology import Connection, RDMAConnection, SocketConnection
 
 
+class _ByteSnapshot(NamedTuple):
+    bytes_sent: int
+    bytes_recv: int
+
+
 def test_loopback_names_are_filtered() -> None:
     assert is_loopback_interface_name("lo")
     assert is_loopback_interface_name("lo0")
@@ -36,8 +40,8 @@ def test_loopback_names_are_filtered() -> None:
 def test_counters_from_per_nic_skip_loopback() -> None:
     snapshot = interface_byte_counters_from_per_nic(
         {
-            "lo": SimpleNamespace(bytes_sent=10, bytes_recv=10),
-            "eth0": SimpleNamespace(bytes_sent=100, bytes_recv=40),
+            "lo": _ByteSnapshot(bytes_sent=10, bytes_recv=10),
+            "eth0": _ByteSnapshot(bytes_sent=100, bytes_recv=40),
         }
     )
     assert set(snapshot) == {"eth0"}
@@ -165,14 +169,14 @@ def test_state_json_uses_camel_case_overlay_field() -> None:
             )
         }
     )
-    dumped = state.model_dump(by_alias=True)
-    overlay = dumped["nodeNetworkUtilization"]
-    assert overlay
-    reported = next(iter(overlay.values()))
-    assert reported["interfaces"][0]["bytesSentPerSec"] == 12.5
+    serialized = state.model_dump_json(by_alias=True)
+    assert '"nodeNetworkUtilization"' in serialized
+    assert '"bytesSentPerSec":12.5' in serialized
 
 
 def test_read_real_psutil_counters_include_a_non_loopback_nic() -> None:
+    from exo.utils.info_gatherer.system_info import read_per_interface_byte_counters
+
     snapshot = read_per_interface_byte_counters()
     assert snapshot
     assert all(not is_loopback_interface_name(name) for name in snapshot)
