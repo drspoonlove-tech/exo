@@ -2,6 +2,12 @@
 
 Thank you for your interest in contributing to EXO!
 
+## Cursor Projects conventions
+
+1. **CloudAgent factory:** PRs via CloudAgent; do not commit secrets or `.env`.
+2. **Build ≠ Operate:** code changes land as PRs; live trading/ops stay out of this repo.
+3. **Bar:** research then ship; prove with PR + evidence.
+
 ## Getting Started
 
 To run EXO from source:
