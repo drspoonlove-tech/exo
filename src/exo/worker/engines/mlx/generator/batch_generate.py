@@ -33,10 +33,13 @@ from exo.worker.engines.mlx.cache import (
     make_kv_cache,
 )
 from exo.worker.engines.mlx.constants import DEFAULT_TOP_LOGPROBS, MAX_TOKENS
+from exo.worker.engines.mlx.generator.continuous_batch import admit_new_prompt
 from exo.worker.engines.mlx.generator.generate import (
+    PrefillCancelled,
     ban_token_ids,
     eos_ids_from_tokenizer,
     extract_top_logprobs,
+    has_pipeline_communication_layer,
     patch_embed_tokens,
     prefill,
 )
@@ -88,6 +91,9 @@ class _EngineTask:
     media_regions: list[MediaRegion] = field(default_factory=list)
     first_gen_token_time: float | None = None
     last_gen_token_time: float | None = None
+    on_prefill_progress: Callable[[int, int], None] | None = None
+    distributed_prompt_progress_callback: Callable[[], None] | None = None
+    interleaved_prefill: bool = False
 
 
 @dataclass(eq=False)
@@ -117,6 +123,10 @@ class ExoBatchGenerator:
             or len(self._mlx_gen._prompt_batch) > 0
             or len(self._mlx_gen._generation_batch) > 0
         )
+
+    @property
+    def has_in_flight_decode(self) -> bool:
+        return len(self._mlx_gen._generation_batch) > 0
 
     def submit(
         self,
@@ -207,40 +217,47 @@ class ExoBatchGenerator:
             uncached_count > REMOTE_PREFILL_MIN_TOKENS
             and task_params.prefill_endpoint is not None
         )
+        admission = admit_new_prompt(
+            in_flight_decode_sequences=int(self.has_in_flight_decode),
+            pipeline_parallel=has_pipeline_communication_layer(self.model),
+            requires_synchronous_embedding_patch=vision is not None,
+        )
+        interleave_prefill = admission.strategy == "interleave_with_decode"
 
         _prefill_tps: float = 0.0
         _prefill_tokens: int = 0
         cache_snapshots: list[CacheSnapshot] = []
         remote_prefilled = False
-        with vision_ctx:
-            if use_remote and task_params.prefill_endpoint is not None:
-                try:
-                    _prefill_tps, _prefill_tokens, cache_snapshots = remote_prefill(
+        if not interleave_prefill:
+            with vision_ctx:
+                if use_remote and task_params.prefill_endpoint is not None:
+                    try:
+                        _prefill_tps, _prefill_tokens, cache_snapshots = remote_prefill(
+                            prompt_tokens[:-1],
+                            cache,
+                            on_prefill_progress,
+                            endpoint=task_params.prefill_endpoint,
+                            request_id=str(uuid.uuid4()),
+                            model_id=str(task_params.model),
+                            start_pos=prefix_hit_length,
+                        )
+                        remote_prefilled = True
+                    except Exception:
+                        logger.opt(exception=True).warning(
+                            "Remote prefill failed, falling back to local prefill"
+                        )
+
+                if not remote_prefilled:
+                    _prefill_tps, _prefill_tokens, cache_snapshots = prefill(
+                        self.model,
+                        self.tokenizer,
+                        sampler,
                         prompt_tokens[:-1],
                         cache,
+                        self.group,
                         on_prefill_progress,
-                        endpoint=task_params.prefill_endpoint,
-                        request_id=str(uuid.uuid4()),
-                        model_id=str(task_params.model),
-                        start_pos=prefix_hit_length,
+                        distributed_prompt_progress_callback,
                     )
-                    remote_prefilled = True
-                except Exception:
-                    logger.opt(exception=True).warning(
-                        "Remote prefill failed, falling back to local prefill"
-                    )
-
-            if not remote_prefilled:
-                _prefill_tps, _prefill_tokens, cache_snapshots = prefill(
-                    self.model,
-                    self.tokenizer,
-                    sampler,
-                    prompt_tokens[:-1],
-                    cache,
-                    self.group,
-                    on_prefill_progress,
-                    distributed_prompt_progress_callback,
-                )
 
         prefix_cache_hit: Literal["none", "partial", "exact"] = "none"
         if matched_index is not None and prefix_hit_length > 0:
@@ -264,7 +281,7 @@ class ExoBatchGenerator:
                 c.values = c._trim(trim_size, c.values)
                 c._idx = c.max_size
 
-        if not is_bench or task_params.use_prefix_cache:
+        if not interleave_prefill and (not is_bench or task_params.use_prefix_cache):
             min_prefix_hit_length = max(
                 1000, system_prompt_token_count(task_params, self.tokenizer)
             )
@@ -279,7 +296,18 @@ class ExoBatchGenerator:
                 prefill_tps=_prefill_tps,
             )
 
-        last_tokens = prompt_tokens[-2:]
+        if interleave_prefill:
+            logger.info(
+                "Interleaving new-prompt prefill with in-flight decode "
+                f"({admission.reason}, remaining_tokens={uncached_count})"
+            )
+            tokens_for_insert = (
+                prompt_tokens
+                if int(prompt_tokens.shape[0]) > 0
+                else all_prompt_tokens[-2:]
+            )
+        else:
+            tokens_for_insert = prompt_tokens[-2:]
 
         logits_processors: list[Callable[[mx.array, mx.array], mx.array]] = (
             make_logits_processors(
@@ -299,7 +327,7 @@ class ExoBatchGenerator:
         max_tokens = task_params.max_output_tokens or MAX_TOKENS
 
         uids = self._mlx_gen.insert(
-            prompts=[cast(list[int], last_tokens.tolist())],
+            prompts=[cast(list[int], tokens_for_insert.tolist())],
             max_tokens=[max_tokens],
             caches=[list(cache)],
             samplers=[sampler],
@@ -322,6 +350,9 @@ class ExoBatchGenerator:
             prefill_tps=_prefill_tps,
             prefix_cache_hit=prefix_cache_hit,
             media_regions=media_regions,
+            on_prefill_progress=on_prefill_progress,
+            distributed_prompt_progress_callback=distributed_prompt_progress_callback,
+            interleaved_prefill=interleave_prefill,
         )
 
         return uid
@@ -336,10 +367,24 @@ class ExoBatchGenerator:
             any(t.task_params.logprobs for t in self._active_tasks.values()),
         )
         _step_tic = time.perf_counter()
-        _, responses = self._mlx_gen.next()
+        prompt_responses, responses = self._mlx_gen.next()
         _next_elapsed = time.perf_counter() - _step_tic
 
         topk = take_ready_topk(gb)
+
+        for prompt_response in prompt_responses:
+            state = self._active_tasks.get(prompt_response.uid)
+            if state is None:
+                continue
+            if state.distributed_prompt_progress_callback is not None:
+                try:
+                    state.distributed_prompt_progress_callback()
+                except PrefillCancelled:
+                    self.cancel([prompt_response.uid])
+                    continue
+            if state.on_prefill_progress is not None:
+                processed, total = cast(tuple[int, int], prompt_response.progress)
+                state.on_prefill_progress(processed, total)
 
         results: list[tuple[int, GenerationResponse]] = []
 
