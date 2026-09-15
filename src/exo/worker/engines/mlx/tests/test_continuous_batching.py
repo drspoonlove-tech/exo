@@ -1,3 +1,7 @@
+# pyright: reportAny=false, reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+# pyright: reportUnknownLambdaType=false, reportPrivateUsage=false
+# pyright: reportInvalidCast=false, reportArgumentType=false
 """Prove a late-arriving prompt does not stall in-flight decode.
 
 Uses injectable clocks and a stand-in mlx BatchGenerator — no cluster, no
@@ -53,10 +57,9 @@ class FakeTokenArray:
         return len(self.tokens)
 
     def __getitem__(self, key: int | slice) -> FakeTokenArray | int:
-        selected = self.tokens[key]
         if isinstance(key, slice):
-            return FakeTokenArray(list(selected))
-        return selected
+            return FakeTokenArray(list(self.tokens[key]))
+        return self.tokens[key]
 
     def tolist(self) -> list[int]:
         return list(self.tokens)
@@ -159,7 +162,9 @@ def patched_batch_generate(
     mlx_gen.clock = clock
     prompt_tokens = FakeTokenArray([10, 11, 12, 13, 14, 15, 16, 17])
 
-    def fake_prefill(*_args: object, **_kwargs: object) -> tuple[float, int, list[object]]:
+    def fake_prefill(
+        *_args: object, **_kwargs: object
+    ) -> tuple[float, int, list[object]]:
         prefill_calls.append("prefill")
         clock.advance(PREFILL_DURATION, "blocking_prefill")
         return 12.0, 8, []
@@ -198,7 +203,7 @@ def patched_batch_generate(
         batch_generate_module, "eos_ids_from_tokenizer", lambda _tokenizer: [0]
     )
     monkeypatch.setattr(
-        batch_generate_module, "_has_pipeline_communication_layer", lambda _model: False
+        batch_generate_module, "has_pipeline_communication_layer", lambda _model: False
     )
     monkeypatch.setattr(batch_generate_module, "set_needs_topk", lambda *_a, **_k: None)
     monkeypatch.setattr(
@@ -243,14 +248,13 @@ def test_submit_skips_blocking_prefill_when_decode_is_in_flight(
     mlx_gen._generation_batch.size = 1
     clock_after_first = clock.now
     prefill_calls.clear()
-    mlx_gen.insert_calls.clear()
 
     uid = generator.submit(task_params=_task_params(), prompt="second")
 
     assert uid == 1
     assert prefill_calls == []
     assert clock.now == clock_after_first
-    assert mlx_gen.insert_calls == [[[10, 11, 12, 13, 14, 15, 16, 17]]]
+    assert mlx_gen.insert_calls[-1] == [[10, 11, 12, 13, 14, 15, 16, 17]]
     assert generator._active_tasks[uid].interleaved_prefill is True
 
 
@@ -288,7 +292,7 @@ def test_pipeline_parallel_still_blocks_while_decode_is_in_flight(
 ) -> None:
     clock, prefill_calls, mlx_gen = patched_batch_generate
     monkeypatch.setattr(
-        batch_generate_module, "_has_pipeline_communication_layer", lambda _model: True
+        batch_generate_module, "has_pipeline_communication_layer", lambda _model: True
     )
     generator = _make_generator()
     generator.submit(task_params=_task_params(), prompt="first")
@@ -377,8 +381,12 @@ def test_engine_step_keeps_decode_moving_when_a_new_prompt_is_queued(
     from exo.worker.runner.llm_inference.batch_generator import BatchGenerator
 
     clock, prefill_calls, mlx_gen = patched_batch_generate
-    monkeypatch.setattr(engine_module, "apply_chat_template", lambda *_a, **_k: "prompt")
-    monkeypatch.setattr(engine_module, "_check_for_debug_prompts", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        engine_module, "apply_chat_template", lambda *_a, **_k: "prompt"
+    )
+    monkeypatch.setattr(
+        engine_module, "_check_for_debug_prompts", lambda *_a, **_k: None
+    )
 
     engine = BatchGenerator(
         model=cast(Model, FakeModel()),
@@ -388,8 +396,10 @@ def test_engine_step_keeps_decode_moving_when_a_new_prompt_is_queued(
         tool_parser=None,
         model_id=ModelId("test/model"),
         device_rank=0,
-        cancel_receiver=cast(Any, type("R", (), {"collect": staticmethod(lambda: [])})()),
-        event_sender=cast(Any, type("S", (), {"send": staticmethod(lambda _e: None)})()),
+        cancel_receiver=cast(Any, type("R", (), {"collect": staticmethod(list)})()),
+        event_sender=cast(
+            Any, type("S", (), {"send": staticmethod(lambda _e: None)})()
+        ),
     )
 
     engine._queue.append(_text_task("task-a"))

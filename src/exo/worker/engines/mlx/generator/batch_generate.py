@@ -36,10 +36,10 @@ from exo.worker.engines.mlx.constants import DEFAULT_TOP_LOGPROBS, MAX_TOKENS
 from exo.worker.engines.mlx.generator.continuous_batch import admit_new_prompt
 from exo.worker.engines.mlx.generator.generate import (
     PrefillCancelled,
-    _has_pipeline_communication_layer,
     ban_token_ids,
     eos_ids_from_tokenizer,
     extract_top_logprobs,
+    has_pipeline_communication_layer,
     patch_embed_tokens,
     prefill,
 )
@@ -219,7 +219,7 @@ class ExoBatchGenerator:
         )
         admission = admit_new_prompt(
             in_flight_decode_sequences=int(self.has_in_flight_decode),
-            pipeline_parallel=_has_pipeline_communication_layer(self.model),
+            pipeline_parallel=has_pipeline_communication_layer(self.model),
             requires_synchronous_embedding_patch=vision is not None,
         )
         interleave_prefill = admission.strategy == "interleave_with_decode"
@@ -232,16 +232,14 @@ class ExoBatchGenerator:
             with vision_ctx:
                 if use_remote and task_params.prefill_endpoint is not None:
                     try:
-                        _prefill_tps, _prefill_tokens, cache_snapshots = (
-                            remote_prefill(
-                                prompt_tokens[:-1],
-                                cache,
-                                on_prefill_progress,
-                                endpoint=task_params.prefill_endpoint,
-                                request_id=str(uuid.uuid4()),
-                                model_id=str(task_params.model),
-                                start_pos=prefix_hit_length,
-                            )
+                        _prefill_tps, _prefill_tokens, cache_snapshots = remote_prefill(
+                            prompt_tokens[:-1],
+                            cache,
+                            on_prefill_progress,
+                            endpoint=task_params.prefill_endpoint,
+                            request_id=str(uuid.uuid4()),
+                            model_id=str(task_params.model),
+                            start_pos=prefix_hit_length,
                         )
                         remote_prefilled = True
                     except Exception:
@@ -385,8 +383,8 @@ class ExoBatchGenerator:
                     self.cancel([prompt_response.uid])
                     continue
             if state.on_prefill_progress is not None:
-                processed, total = prompt_response.progress
-                state.on_prefill_progress(int(processed), int(total))
+                processed, total = cast(tuple[int, int], prompt_response.progress)
+                state.on_prefill_progress(processed, total)
 
         results: list[tuple[int, GenerationResponse]] = []
 
