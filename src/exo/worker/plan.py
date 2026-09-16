@@ -79,7 +79,11 @@ def _kill_runner(
 ) -> Shutdown | None:
     for runner in runners.values():
         runner_id = runner.bound_instance.bound_runner_id
-        if (instance_id := runner.bound_instance.instance.instance_id) not in instances:
+        instance_id = runner.bound_instance.instance.instance_id
+        current_instance = instances.get(instance_id)
+        if current_instance is None:
+            return Shutdown(instance_id=instance_id, runner_id=runner_id)
+        if current_instance != runner.bound_instance.instance:
             return Shutdown(instance_id=instance_id, runner_id=runner_id)
         if isinstance(runner.status, RunnerFailed):
             return Shutdown(

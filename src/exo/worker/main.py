@@ -28,6 +28,7 @@ from exo.shared.types.events import (
     IndexedEvent,
     InputChunkReceived,
     InstanceDeleted,
+    InstanceReplacedAtomically,
     NodeDownloadProgress,
     NodeGatheredInfo,
     TaskCreated,
@@ -146,6 +147,8 @@ class Worker:
 
                 if isinstance(event, InstanceDeleted):
                     self._instance_backoff.reset(event.instance_id)
+                elif isinstance(event, InstanceReplacedAtomically):
+                    self._instance_backoff.reset(event.instance.instance_id)
 
                 # Buffer input image chunks for image editing
                 if isinstance(event, InputChunkReceived):
