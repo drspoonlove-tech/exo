@@ -1,8 +1,14 @@
 from typing import Any
 
 import exo.worker.plan as plan_mod
+from exo.shared.types.common import Host
 from exo.shared.types.tasks import Shutdown
-from exo.shared.types.worker.instances import BoundInstance, Instance, InstanceId
+from exo.shared.types.worker.instances import (
+    BoundInstance,
+    Instance,
+    InstanceId,
+    MlxRingInstance,
+)
 from exo.shared.types.worker.runners import (
     RunnerFailed,
     RunnerId,
@@ -180,6 +186,55 @@ def test_plan_does_not_create_runner_when_supervisor_already_present():
     )
 
     assert result is None
+
+
+def test_plan_kills_runner_when_instance_hosts_change():
+    """After InstanceReplacedAtomically, the bound instance no longer matches."""
+    shard1 = get_pipeline_shard_metadata(MODEL_A_ID, device_rank=0, world_size=2)
+    shard2 = get_pipeline_shard_metadata(MODEL_A_ID, device_rank=1, world_size=2)
+    instance = get_mlx_ring_instance(
+        instance_id=INSTANCE_1_ID,
+        model_id=MODEL_A_ID,
+        node_to_runner={NODE_A: RUNNER_1_ID, NODE_B: RUNNER_2_ID},
+        runner_to_shard={RUNNER_1_ID: shard1, RUNNER_2_ID: shard2},
+    )
+    assert isinstance(instance, MlxRingInstance)
+    bound_instance = BoundInstance(
+        instance=instance, bound_runner_id=RUNNER_1_ID, bound_node_id=NODE_A
+    )
+    runner = FakeRunnerSupervisor(bound_instance=bound_instance, status=RunnerReady())
+
+    replaced = instance.model_copy(
+        update={
+            "hosts_by_node": {
+                NODE_A: [
+                    Host(ip="0.0.0.0", port=50000),
+                    Host(ip="169.254.1.2", port=50000),
+                ],
+                NODE_B: [
+                    Host(ip="169.254.1.1", port=50000),
+                    Host(ip="0.0.0.0", port=50000),
+                ],
+            }
+        }
+    )
+
+    result = plan_mod.plan(
+        node_id=NODE_A,
+        runners={RUNNER_1_ID: runner},  # type: ignore[arg-type]
+        global_download_status={NODE_A: []},
+        instances={INSTANCE_1_ID: replaced},
+        all_runners={RUNNER_1_ID: RunnerReady(), RUNNER_2_ID: RunnerReady()},
+        tasks={},
+        input_chunk_buffer={},
+        image_cache={},
+        instance_backoff=KeyedBackoff(),
+        download_backoff=KeyedBackoff(),
+    )
+
+    assert isinstance(result, Shutdown)
+    assert result.instance_id == INSTANCE_1_ID
+    assert result.runner_id == RUNNER_1_ID
 
 
 def test_plan_does_not_create_runner_for_unassigned_node():

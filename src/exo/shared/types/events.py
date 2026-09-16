@@ -66,6 +66,17 @@ class InstanceCreated(BaseEvent):
         return False
 
 
+@final
+class InstanceReplacedAtomically(BaseEvent):
+    """Swap an instance in place when a higher-priority connection appears.
+
+    Same ``instance_id``; updated connection fields only. Avoids a
+    delete-then-create gap (and the dual-path hang that gap causes).
+    """
+
+    instance: Instance
+
+
 class InstanceDeleted(BaseEvent):
     instance_id: InstanceId
 
@@ -154,6 +165,7 @@ Event = (
     | TaskDeleted
     | TaskAcknowledged
     | InstanceCreated
+    | InstanceReplacedAtomically
     | InstanceDeleted
     | RunnerStatusUpdated
     | NodeTimedOut

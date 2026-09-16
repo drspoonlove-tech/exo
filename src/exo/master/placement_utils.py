@@ -6,7 +6,7 @@ from exo.shared.models.model_cards import ModelCard
 from exo.shared.topology import Topology
 from exo.shared.types.common import Host, NodeId
 from exo.shared.types.memory import Memory
-from exo.shared.types.profiling import MemoryUsage, NodeNetworkInfo
+from exo.shared.types.profiling import InterfaceType, MemoryUsage, NodeNetworkInfo
 from exo.shared.types.topology import Cycle, RDMAConnection, SocketConnection
 from exo.shared.types.worker.runners import RunnerId, ShardAssignments
 from exo.shared.types.worker.shards import (
@@ -336,6 +336,35 @@ def _find_connection_ip(
             yield connection.sink_multiaddr.ip_address
 
 
+RING_INTERFACE_PRIORITY: dict[InterfaceType, int] = {
+    "thunderbolt": 0,
+    "maybe_ethernet": 1,
+    "ethernet": 2,
+    "wifi": 3,
+    "unknown": 4,
+}
+
+COORDINATOR_INTERFACE_PRIORITY: dict[InterfaceType, int] = {
+    "ethernet": 0,
+    "wifi": 1,
+    "unknown": 2,
+    "maybe_ethernet": 3,
+    "thunderbolt": 4,
+}
+
+SELF_BIND_IP_ADDRESS = "0.0.0.0"
+NON_NEIGHBOR_PLACEHOLDER_IP_ADDRESS = "198.51.100.1"
+
+
+def interface_priority_score(
+    interface_type: InterfaceType,
+    *,
+    ring: bool,
+) -> int:
+    table = RING_INTERFACE_PRIORITY if ring else COORDINATOR_INTERFACE_PRIORITY
+    return table[interface_type]
+
+
 def find_ip_prioritised(
     node_id: NodeId,
     other_node_id: NodeId,
@@ -345,37 +374,23 @@ def find_ip_prioritised(
 ) -> str | None:
     """Find an IP address between nodes with prioritization.
 
-    Priority: ethernet > wifi > unknown > thunderbolt
+    Ring (data plane): thunderbolt > maybe_ethernet > ethernet > wifi > unknown.
+    Coordinator (RDMA control): ethernet > wifi > unknown > maybe_ethernet > thunderbolt.
     """
     ips = list(_find_connection_ip(node_id, other_node_id, cycle_digraph))
     if not ips:
         return None
     other_network = node_network.get(other_node_id, NodeNetworkInfo())
-    ip_to_type = {
+    ip_to_type: dict[str, InterfaceType] = {
         iface.ip_address: iface.interface_type for iface in other_network.interfaces
     }
 
-    # Ring should prioritise fastest connection. As a best-effort, we prioritise TB.
-    # TODO: Profile and get actual connection speeds.
-    if ring:
-        priority = {
-            "thunderbolt": 0,
-            "maybe_ethernet": 1,
-            "ethernet": 2,
-            "wifi": 3,
-            "unknown": 4,
-        }
-
-    # RDMA prefers ethernet coordinator
-    else:
-        priority = {
-            "ethernet": 0,
-            "wifi": 1,
-            "unknown": 2,
-            "maybe_ethernet": 3,
-            "thunderbolt": 4,
-        }
-    return min(ips, key=lambda ip: priority.get(ip_to_type.get(ip, "unknown"), 2))
+    return min(
+        ips,
+        key=lambda ip: interface_priority_score(
+            ip_to_type.get(ip, "unknown"), ring=ring
+        ),
+    )
 
 
 def get_mlx_ring_hosts_by_node(
@@ -405,12 +420,15 @@ def get_mlx_ring_hosts_by_node(
 
         for idx, other_node_id in enumerate(selected_cycle):
             if idx == rank:
-                hosts_for_node.append(Host(ip="0.0.0.0", port=ephemeral_port))
+                hosts_for_node.append(
+                    Host(ip=SELF_BIND_IP_ADDRESS, port=ephemeral_port)
+                )
                 continue
 
             if idx not in {left_rank, right_rank}:
-                # Placeholder IP from RFC 5737 TEST-NET-2
-                hosts_for_node.append(Host(ip="198.51.100.1", port=0))
+                hosts_for_node.append(
+                    Host(ip=NON_NEIGHBOR_PLACEHOLDER_IP_ADDRESS, port=0)
+                )
                 continue
 
             connection_ip = find_ip_prioritised(
@@ -443,7 +461,7 @@ def get_mlx_jaccl_coordinators(
 
     def get_ip_for_node(n: NodeId) -> str:
         if n == coordinator:
-            return "0.0.0.0"
+            return SELF_BIND_IP_ADDRESS
 
         ip = find_ip_prioritised(
             n, coordinator, cycle_digraph, node_network, ring=False

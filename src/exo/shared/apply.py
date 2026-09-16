@@ -17,6 +17,7 @@ from exo.shared.types.events import (
     InstanceDeleted,
     InstanceLinkCreated,
     InstanceLinkDeleted,
+    InstanceReplacedAtomically,
     NodeDownloadProgress,
     NodeGatheredInfo,
     NodeTimedOut,
@@ -97,6 +98,8 @@ def event_apply(event: Event, state: State) -> State:
             return apply_custom_model_card_deleted(event, state)
         case InstanceCreated():
             return apply_instance_created(event, state)
+        case InstanceReplacedAtomically():
+            return apply_instance_replaced_atomically(event, state)
         case InstanceDeleted():
             return apply_instance_deleted(event, state)
         case NodeTimedOut():
@@ -209,13 +212,27 @@ def apply_task_failed(event: TaskFailed, state: State) -> State:
     return state.model_copy(update={"tasks": new_tasks})
 
 
-def apply_instance_created(event: InstanceCreated, state: State) -> State:
-    instance = event.instance
+def _upsert_instance(instance: Instance, state: State) -> State:
     new_instances: Mapping[InstanceId, Instance] = {
         **state.instances,
         instance.instance_id: instance,
     }
     return state.model_copy(update={"instances": new_instances})
+
+
+def apply_instance_created(event: InstanceCreated, state: State) -> State:
+    return _upsert_instance(event.instance, state)
+
+
+def apply_instance_replaced_atomically(
+    event: InstanceReplacedAtomically, state: State
+) -> State:
+    """Overwrite the instance with the same id, keeping tasks and links.
+
+    Applied by ``event_apply``. Workers detect the payload change and restart
+    runners so the data plane uses the new path without a delete/create gap.
+    """
+    return _upsert_instance(event.instance, state)
 
 
 def apply_instance_deleted(event: InstanceDeleted, state: State) -> State:

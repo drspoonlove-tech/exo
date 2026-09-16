@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import anyio
 from loguru import logger
 
+from exo.master.connection_upgrade import ConnectionUpgradeScheduler, SystemClock
 from exo.master.placement import (
     add_instance_to_placements,
     cancel_unnecessary_downloads,
@@ -53,6 +54,8 @@ from exo.shared.types.events import (
     TaskCreated,
     TaskDeleted,
     TaskStatusUpdated,
+    TopologyEdgeCreated,
+    TopologyEdgeDeleted,
     TraceEventData,
     TracesCollected,
     TracesMerged,
@@ -146,6 +149,9 @@ class Master:
         self._event_log = DiskEventLog(EXO_EVENT_LOG_DIR / "master")
         self._pending_traces: dict[TaskId, dict[int, list[TraceEventData]]] = {}
         self._expected_ranks: dict[TaskId, set[int]] = {}
+        self._connection_upgrade_scheduler = ConnectionUpgradeScheduler(
+            clock=SystemClock()
+        )
 
     async def run(self):
         logger.info("Starting Master")
@@ -480,6 +486,8 @@ class Master:
                         )
                         break
 
+            await self._emit_connection_upgrades()
+
             # time out dead nodes
             for node_id, time in self.state.last_seen.items():
                 now = datetime.now(tz=timezone.utc)
@@ -520,6 +528,24 @@ class Master:
 
                     self._event_log.append(event)
                     await self._send_indexed_event(indexed)
+
+                    if isinstance(
+                        event,
+                        (TopologyEdgeCreated, TopologyEdgeDeleted, NodeGatheredInfo),
+                    ):
+                        await self._emit_connection_upgrades()
+
+    async def _emit_connection_upgrades(self) -> None:
+        for upgrade_event in self._connection_upgrade_scheduler.events(
+            self.state.instances,
+            self.state.topology,
+            self.state.node_network,
+        ):
+            logger.info(
+                f"Replacing instance {upgrade_event.instance.instance_id} "
+                "onto a higher-priority connection"
+            )
+            await self.event_sender.send(upgrade_event)
 
     # This function is re-entrant, take care!
     async def _send_indexed_event(self, event: IndexedEvent):
