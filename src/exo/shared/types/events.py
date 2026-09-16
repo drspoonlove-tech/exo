@@ -164,7 +164,7 @@ Event = (
     | TaskFailed
     | TaskDeleted
     | TaskAcknowledged
-    |     InstanceCreated
+    | InstanceCreated
     | InstanceReplacedAtomically
     | InstanceDeleted
     | RunnerStatusUpdated

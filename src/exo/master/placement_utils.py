@@ -381,7 +381,7 @@ def find_ip_prioritised(
     if not ips:
         return None
     other_network = node_network.get(other_node_id, NodeNetworkInfo())
-    ip_to_type = {
+    ip_to_type: dict[str, InterfaceType] = {
         iface.ip_address: iface.interface_type for iface in other_network.interfaces
     }
 

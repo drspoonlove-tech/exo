@@ -97,9 +97,7 @@ def _link(source: NodeId, sink: NodeId, sink_ip_address: str) -> Connection:
     return Connection(source=source, sink=sink, edge=_socket(sink_ip_address))
 
 
-def _add_pair(
-    topology: Topology, source_ip: str, sink_ip: str
-) -> None:
+def _add_pair(topology: Topology, source_ip: str, sink_ip: str) -> None:
     topology.add_connection(_link(NODE_A, NODE_B, sink_ip))
     topology.add_connection(_link(NODE_B, NODE_A, source_ip))
 
@@ -319,18 +317,12 @@ def test_scheduler_waits_for_stable_window_with_fake_clock() -> None:
 
     instance = _ring_instance(WIFI_A, WIFI_B)
     clock = FakeClock()
-    scheduler = ConnectionUpgradeScheduler(
-        clock=clock, stable_for=timedelta(seconds=2)
-    )
+    scheduler = ConnectionUpgradeScheduler(clock=clock, stable_for=timedelta(seconds=2))
 
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     clock.advance(timedelta(seconds=1))
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     clock.advance(timedelta(seconds=1))
     events = scheduler.events({INSTANCE_ID: instance}, topology, _full_network())
@@ -349,24 +341,16 @@ def test_scheduler_resets_when_candidate_changes() -> None:
 
     instance = _ring_instance(WIFI_A, WIFI_B)
     clock = FakeClock()
-    scheduler = ConnectionUpgradeScheduler(
-        clock=clock, stable_for=timedelta(seconds=2)
-    )
+    scheduler = ConnectionUpgradeScheduler(clock=clock, stable_for=timedelta(seconds=2))
 
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     clock.advance(timedelta(seconds=1))
     _add_pair(topology, THUNDERBOLT_A, THUNDERBOLT_B)
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     clock.advance(timedelta(seconds=1))
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     clock.advance(timedelta(seconds=1))
     events = scheduler.events({INSTANCE_ID: instance}, topology, _full_network())
@@ -390,16 +374,10 @@ def test_scheduler_clears_pending_when_upgrade_disappears() -> None:
 
     instance = _ring_instance(WIFI_A, WIFI_B)
     clock = FakeClock()
-    scheduler = ConnectionUpgradeScheduler(
-        clock=clock, stable_for=timedelta(seconds=2)
-    )
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    scheduler = ConnectionUpgradeScheduler(clock=clock, stable_for=timedelta(seconds=2))
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
 
     topology.remove_connection(thunderbolt)
     topology.remove_connection(thunderbolt_back)
     clock.advance(timedelta(seconds=2))
-    assert (
-        scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []
-    )
+    assert scheduler.events({INSTANCE_ID: instance}, topology, _full_network()) == []

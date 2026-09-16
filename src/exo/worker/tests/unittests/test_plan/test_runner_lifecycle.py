@@ -1,9 +1,14 @@
 from typing import Any
 
 import exo.worker.plan as plan_mod
-from exo.shared.types.tasks import Shutdown
 from exo.shared.types.common import Host
-from exo.shared.types.worker.instances import BoundInstance, Instance, InstanceId, MlxRingInstance
+from exo.shared.types.tasks import Shutdown
+from exo.shared.types.worker.instances import (
+    BoundInstance,
+    Instance,
+    InstanceId,
+    MlxRingInstance,
+)
 from exo.shared.types.worker.runners import (
     RunnerFailed,
     RunnerId,
